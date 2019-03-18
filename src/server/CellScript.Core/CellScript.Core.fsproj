@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Extensions.fs" />
+    <Compile Include="Types.fs" />
+    <Compile Include="Logger.fs" />
+    <Compile Include="Registration.fs" />
+    <Compile Include="ExcelArray.fs" />
+    <Compile Include="Table.fs" />
+    <Compile Include="ExcelSeries.fs" />
+    <Compile Include="UDF.fs" />
+  </ItemGroup>
+  <Import Project="..\..\..\.paket\Paket.Restore.targets" />
+</Project>

@@ -1,0 +1,3 @@
+group client
+ExcelDna.Registration.FSharp
+Fable.Remoting.DotnetClient

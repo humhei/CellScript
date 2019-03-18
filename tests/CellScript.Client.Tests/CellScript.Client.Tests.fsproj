@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net462</TargetFramework>
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+    <GenerateBindingRedirectsOutputType>true</GenerateBindingRedirectsOutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\CellScript.Core.Tests\CellScript.Core.Tests.fsproj">
+      <Name>CellScript.Core.Test.fsproj</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\..\src\client\CellScript.Client\CellScript.Client.fsproj">
+      <Name>CellScript.Client.fsproj</Name>
+    </ProjectReference>
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="Registration.fs" />
+    <Compile Include="UDF.fs" />
+    <None Include="Properties/ExcelDna.Build.props" />
+    <None Include="CellScript.Client.Tests-AddIn.dna" />
+  </ItemGroup>
+  <Import Project="..\..\paket-files\client\github.com\humhei\AddIn_Package_Updated\ExcelDna.AddIn\tools\ExcelDna.AddIn.targets" />
+  <Target Name="PostBuild" AfterTargets="PostBuildEvent">
+    <Exec Command="copy &quot;$(TargetPath).config&quot; &quot;$(TargetDir)$(TargetName)-AddIn64.xll.config&quot; /Y&#xD;&#xA;copy &quot;$(TargetPath).config&quot; &quot;$(TargetDir)$(TargetName)-AddIn64-packed.xll.config&quot; /Y" />
+  </Target>
+  <Import Project="..\..\.paket\Paket.Restore.targets" />
+</Project>

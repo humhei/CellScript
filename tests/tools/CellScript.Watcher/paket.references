@@ -1,0 +1,3 @@
+group build
+ExcelDna.Registration.FSharp
+Fake.Core.Target

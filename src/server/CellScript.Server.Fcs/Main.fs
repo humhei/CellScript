@@ -19,15 +19,16 @@ module Main =
     let runCellScriptServer (config: Config) =
 
         let webApp =
-            let cellScriptApi: ICellScriptApi = {
-
-                eval = fun input code ->
-                    async {
-                        return Fcs.eval config input code
-                    }
-
-                test = fun () -> async { return "Hello world from Fable.Remoting"}
-            }
+            let cellScriptApi: ICellScriptApi =
+                { eval =
+                    fun input code  ->
+                        async {return Fcs.eval config input code}
+                  test = fun () -> async { return "Hello world from Fable.Remoting"}
+                  go =
+                    fun s ->
+                        printf "%A" s
+                        async {return "Hello"}
+                }
 
             let webPart =
                 Remoting.createApi()

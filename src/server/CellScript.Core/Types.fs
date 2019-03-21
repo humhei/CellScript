@@ -11,6 +11,14 @@ module Types =
           ColumnLast: int
           RowLast: int }
 
+    type RangeAddress =
+        { ColumnFirst: int
+          RowFirst: int
+          ColumnLast: int
+          RowLast: int
+          WorkbookPath: string
+          SheetName: string }
+
     type ExcelEmpty() = class end
     type ExcelError() = class end
 

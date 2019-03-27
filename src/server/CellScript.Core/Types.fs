@@ -2,16 +2,17 @@ namespace CellScript.Core
 open Deedle
 open Extensions
 open System
+open Newtonsoft.Json
 
 module Types =
 
-    type SerializableExcelReference =
+    type ExcelReference =
         { ColumnFirst: int
           RowFirst: int
           ColumnLast: int
           RowLast: int }
 
-    type RangeAddress =
+    type ExcelReferenceWithFileInfo =
         { ColumnFirst: int
           RowFirst: int
           ColumnLast: int
@@ -19,29 +20,36 @@ module Types =
           WorkbookPath: string
           SheetName: string }
 
+
+    [<RequireQualifiedAccess>]
+    type ExcelInput =
+        | Ref of ExcelReferenceWithFileInfo
+        | Single of obj
+        | Array2D of obj[,]
+
     type ExcelEmpty() = class end
     type ExcelError() = class end
 
 
     [<RequireQualifiedAccess>]
     module CellValue =
-        let isArrayEmpty (v: obj) =
+        let private isArrayEmpty (v: obj) =
             match v with
             | :? float as v -> v = 0.
             | _ -> false
 
-        let isNotArrayEmpty (v: obj) =
+        let private isNotArrayEmpty (v: obj) =
             isArrayEmpty v |> not
 
-        let isTextEmpty (v: obj) =
+        let private isTextEmpty (v: obj) =
             match v with
             | :? string as v -> v = ""
             | _ -> false
 
-        let isNotTextEmpty (v: obj) =
+        let private isNotTextEmpty (v: obj) =
             isTextEmpty v |> not
 
-        let isEmpty (v: obj) =
+        let private isEmpty (v: obj) =
             isArrayEmpty v || isTextEmpty v
 
         let isNotEmpty (v: obj) =
@@ -68,7 +76,6 @@ module Types =
         member x.AsFrame =
             let (ExcelFrame frame) = x
             frame
-
 
 
 
@@ -99,19 +106,28 @@ module Types =
                 |> array2D
             result
 
-        let ofArray2DWithHeader (array:obj[,]) =
-            let fixHeaders headers =
-                headers |> Seq.mapi (fun i (header: obj) ->
-                    match header with
-                    | :? ExcelEmpty | :? ExcelError -> box (sprintf "Column%d" i)
-                    | _ -> header
-                )
-            let fixContents contents =
-                contents |> Array2D.map (fun (value: obj) ->
-                    match value with
-                    | :? ExcelEmpty | :? ExcelError -> box null
-                    | _ -> value
-                )
+        let private fixHeaders headers =
+            headers |> Seq.mapi (fun i (header: obj) ->
+                match header with
+                | :? ExcelEmpty | :? ExcelError -> box (sprintf "Column%d" i)
+                | _ -> header
+            )
+        let private fixContents contents =
+            contents |> Array2D.map (fun (value: obj) ->
+                match value with
+                | :? ExcelEmpty | :? ExcelError -> box null
+                | _ -> value
+            )
+
+        let ofArray2D (array2D: obj[,]) =
+            array2D
+            |> fixContents
+            |> Array2D.rebase
+            |> Frame.ofArray2D
+            |> ExcelFrame
+
+        let ofArray2DWithHeader (array: obj[,]) =
+
 
             let array = Array2D.rebase array
 
@@ -121,3 +137,4 @@ module Types =
 
             Frame.indexColsWith headers contents
             |> ExcelFrame
+

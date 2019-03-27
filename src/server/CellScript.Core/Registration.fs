@@ -94,7 +94,7 @@ module Registration =
             private
                 | Array2D of (obj [,] -> 'T)
                 | Object of (obj -> 'T)
-                | Ref of (SerializableExcelReference -> 'T)
+                | Ref of (ExcelReference -> 'T)
 
 
         with
@@ -105,7 +105,7 @@ module Registration =
                     | Object object ->
                         LambdaExpressionStatic.ofFun(fun (input: obj) -> object input)
                     | Ref ref ->
-                        LambdaExpressionStatic.ofFun(fun (input: SerializableExcelReference) -> ref input)
+                        LambdaExpressionStatic.ofFun(fun (input: ExcelReference) -> ref input)
 
                 member x.AsArrayLambda =
 
@@ -119,7 +119,7 @@ module Registration =
                             toArrayConversion object values
                         )
                     | Ref ref ->
-                        LambdaExpressionStatic.ofFun (fun (values: SerializableExcelReference []) ->
+                        LambdaExpressionStatic.ofFun (fun (values: ExcelReference []) ->
                             toArrayConversion ref values
                         )
 
@@ -150,7 +150,7 @@ module Registration =
         let object conversion =
             Conversion.Object conversion
 
-        let ref (conversion:SerializableExcelReference -> 'T) =
+        let ref (conversion: ExcelReference -> 'T) =
             Conversion.Ref conversion
 
         let register (originType: Type) (setParam: IConversion -> unit) =

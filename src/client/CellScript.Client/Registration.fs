@@ -5,13 +5,15 @@ open System
 open System.Reflection
 open CellScript.Core.Registration
 open System.Linq.Expressions
-open Fable.Remoting.DotnetClient
-
+open Elmish
+open Elmish.Bridge
+open CellScript.Core
+open System.Timers
+open Microsoft.FSharp.Reflection
+open FSharp.Quotations.Evaluator
 
 [<RequireQualifiedAccess>]
 module Registration =
-    open CellScript.Core.Extensions
-    open CellScript.Shared
 
     [<RequireQualifiedAccess>]
     module Assembly =
@@ -35,24 +37,36 @@ module Registration =
             |> List.ofSeq
 
 
-    [<ExcelFunction>]
-    let hellowo2 string =
-        string + "666"
 
+
+    let init() =
+        OuterMsg.None, Cmd.none
+
+    let update msg model =
+        Bridge.Send msg
+        model, Cmd.none
+
+
+    let view model (dispatch: Dispatch<OuterMsg>) =
+        let s = typeof<OuterMsg>
+        let ucis = FSharpType.GetUnionCases s
+        let s = ucis.[0].DeclaringType.GetMethods().[0]
+        let p = s.GetParameters()
+        let k = p.[0].Name
+        let expr = 
+            <@ 
+                fun (table) -> Table.op_ErasedCast table
+
+            @>
+        let kp = expr.Compile()
+        []
 
     let excelFunctions() =
-        let proxy = Proxy.create<UDF.ICellScriptUDFApi> UDF.port.UrlBuilder
-        let propNames = typeof<UDF.ICellScriptUDFApi>.GetProperties() |> Array.map (fun prop -> prop.Name)
-        let lambdas = UDF.apiLambdas proxy.call
-        //let functions = 
-        //    lambdas 
-        //    |> List.mapi (fun i lambda ->
-        //        let excelFunc = ExcelFunctionRegistration(lambda)
-        //        excelFunc.FunctionAttribute.Name <- propNames.[i]
-        //        excelFunc
-        //    )
-        []
+        Program.mkProgram init update view
+        |> Program.withBridge Routed.wsUrl
+        |> Program.run
         //functions
+        []
 
     [<RequireQualifiedAccess>]
     module CustomParamConversion =

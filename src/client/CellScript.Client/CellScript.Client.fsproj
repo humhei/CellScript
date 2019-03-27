@@ -10,15 +10,14 @@
     <ProjectReference Include="..\..\server\CellScript.Core\CellScript.Core.fsproj">
       <Name>CellScript.Core.fsproj</Name>
     </ProjectReference>
+    <ProjectReference Include="..\Elmish.Bridge.DotnetClient\Elmish.Bridge.DotnetClient.fsproj" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="../../shared/Route.fs" />
     <Compile Include="Extensions.fs" />
     <Compile Include="Registration.fs" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="ExcelDna.Registration.FSharp" Version="0.34.7" />
-    <PackageReference Include="Fable.Remoting.DotnetClient" Version="2.3.0" />
     <PackageReference Include="System.Net.Http" Version="4.3.4" />
   </ItemGroup>
   <ItemGroup>

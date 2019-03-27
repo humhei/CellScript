@@ -1,30 +1,38 @@
 ﻿// Learn more about F# at http://fsharp.org
 
 open Suave
-open CellScript.Shared
 open Suave.Filters
 open Suave.Operators
-open CellScript.Server.UDF
-open CellScript.Shared
 open Elmish
-open Elmish.Bridge
+open Elmish.Bridge2
+open CellScript.Core
 
 [<EntryPoint>]
 let main argv =
-    let webApp = 
-        let webPart =
-            Remoting.createApi()
-            |> Remoting.fromValue cellScriptUDFApi
-            |> Remoting.withRouteBuilder UDF.port.RouteBuilder
-            |> Remoting.buildWebPart
+
+
+    let webApp =
+
+        let init clientDispatch () =
+            SomeMsg "", Cmd.none
+
+        let update clientDispatch msg model =
+            printfn "%A" msg
+            SomeMsg "", Cmd.none
+
+        let server =
+            Bridge.mkServer Routed.endpoint init update
+            |> Bridge.run Suave2.server
+
 
         choose [
             path "/ping"   >=> Successful.OK "pong"
-            webPart ]
+            server ]
 
     let suaveConfig =
         { defaultConfig with
-            bindings   = [ HttpBinding.createSimple HTTP host UDF.port.Value ] }
+            bindings   = [ HttpBinding.createSimple HTTP Routed.host Routed.port ] }
+
 
     startWebServer suaveConfig webApp
 

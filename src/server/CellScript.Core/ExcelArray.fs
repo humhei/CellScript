@@ -3,39 +3,34 @@ open Deedle
 open Registration
 open CellScript.Core.Extensions
 open Types
+open Newtonsoft.Json
 
 [<CustomParamConversion>]
-type ExcelArray = ExcelArray of ExcelFrame<int,int>
-with
-    member x.MapValues mapping =
-        let (ExcelArray frame) = x
-        mapping frame
-        |> ExcelArray
+type ExcelArray(frame: ExcelFrame<int,int>) = 
+    [<System.NonSerialized>]
+    let frame = frame
 
-    member x.RemoveEmptyCols() =
-        x.MapValues ExcelFrame.removeEmptyCols
+    [<JsonProperty>]
+    let serializedData = ExcelFrame.toArray2D frame
 
-    static member convert =
-        fun (table:obj[,]) ->
-            Frame.ofArray2D (Array2D.rebase table)
-            |> ExcelFrame
-            |> ExcelArray
+    [<JsonConstructor>]
+    new (array2D: obj[,]) =
+        let frame = ExcelFrame.ofArray2D array2D
+        new ExcelArray(frame)
 
-    static member Convert() =
-        ExcelArray.convert
-        |> CustomParamConversion.array2D
+    member x.AsFrame = frame.AsFrame
 
-    interface ICustomReturn with
-        member x.ReturnValue() =
-            let (ExcelArray excelFrame) = x.RemoveEmptyCols()
-            ExcelFrame.toArray2D excelFrame
+    member x.AsExcelFrame = frame
+
+
 
 [<RequireQualifiedAccess>]
 module ExcelArray =
-    let map mapping (ExcelArray array) =
-        array
+    let map mapping (excelArray: ExcelArray) =
+        excelArray.AsFrame
         |> mapping
+        |> ExcelFrame
         |> ExcelArray
         
     let mapValuesString mapping =
-        map (ExcelFrame.mapValuesString mapping)
+        map (Frame.mapValuesString mapping)

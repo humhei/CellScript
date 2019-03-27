@@ -3,29 +3,33 @@ open Deedle
 open Registration
 open CellScript.Core.Extensions
 open Types
+open Newtonsoft.Json
 
-[<CustomParamConversion>]
-type Table = Table of ExcelFrame<int,string>
-with
-    member x.Headers =
-        let (Table excelFrame) = x
-        excelFrame.AsFrame.ColumnKeys
+[<CustomParamConversion;JsonObject(MemberSerialization.OptIn)>]
+type Table(frame: ExcelFrame<int, string>) =
 
-    interface ICustomReturn with
-        member x.ReturnValue() =
-            let (Table excelFrame) = x
-            ExcelFrame.toArray2DWithHeader excelFrame
+    [<JsonProperty>]
+    let serializedData = ExcelFrame.toArray2DWithHeader frame
 
-    static member Convert (input: obj[,]) =
-        ExcelFrame.ofArray2DWithHeader input 
-        |> Table
+    [<JsonConstructor>]
+    new (array2D: obj[,]) =
+        let frame = ExcelFrame.ofArray2DWithHeader array2D
+        new Table(frame)
+
+    member x.AsFrame = frame.AsFrame
+
+    member x.AsExcelFrame = frame
+            
+    static member op_ErasedCast(array2D: obj[,]) = 
+        Table(array2D)
+
 
 [<RequireQualifiedAccess>]
 module Table =
-    let value (Table table) = table
 
-    let mapFrame mapping (Table table) =
-        ExcelFrame.map mapping table
+    let mapFrame mapping (table: Table) =
+        mapping table.AsFrame
+        |> ExcelFrame
         |> Table
 
     let item (indexes: seq<string>) table =

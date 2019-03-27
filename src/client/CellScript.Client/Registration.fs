@@ -5,10 +5,13 @@ open System
 open System.Reflection
 open CellScript.Core.Registration
 open System.Linq.Expressions
-open CellScript.Core.Extensions
+open Fable.Remoting.DotnetClient
+
 
 [<RequireQualifiedAccess>]
 module Registration =
+    open CellScript.Core.Extensions
+    open CellScript.Shared
 
     [<RequireQualifiedAccess>]
     module Assembly =
@@ -32,13 +35,24 @@ module Registration =
             |> List.ofSeq
 
 
-
-
+    [<ExcelFunction>]
+    let hellowo2 string =
+        string + "666"
 
 
     let excelFunctions() =
-        let assembly = Assembly.GetExecutingAssembly()
-        Assembly.excelFunctions assembly
+        let proxy = Proxy.create<UDF.ICellScriptUDFApi> UDF.port.UrlBuilder
+        let propNames = typeof<UDF.ICellScriptUDFApi>.GetProperties() |> Array.map (fun prop -> prop.Name)
+        let lambdas = UDF.apiLambdas proxy.call
+        //let functions = 
+        //    lambdas 
+        //    |> List.mapi (fun i lambda ->
+        //        let excelFunc = ExcelFunctionRegistration(lambda)
+        //        excelFunc.FunctionAttribute.Name <- propNames.[i]
+        //        excelFunc
+        //    )
+        []
+        //functions
 
     [<RequireQualifiedAccess>]
     module CustomParamConversion =

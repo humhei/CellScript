@@ -1,13 +1,13 @@
 ﻿// Learn more about F# at http://fsharp.org
 
 open Suave
-open Fable.Remoting
 open CellScript.Shared
 open Suave.Filters
 open Suave.Operators
-open Fable.Remoting.Suave
-open Fable.Remoting.Server
 open CellScript.Server.UDF
+open CellScript.Shared
+open Elmish
+open Elmish.Bridge
 
 [<EntryPoint>]
 let main argv =
@@ -15,7 +15,7 @@ let main argv =
         let webPart =
             Remoting.createApi()
             |> Remoting.fromValue cellScriptUDFApi
-            |> Remoting.withRouteBuilder Route.routeBuilder
+            |> Remoting.withRouteBuilder UDF.port.RouteBuilder
             |> Remoting.buildWebPart
 
         choose [
@@ -24,7 +24,7 @@ let main argv =
 
     let suaveConfig =
         { defaultConfig with
-            bindings   = [ HttpBinding.createSimple HTTP Route.host Route.port ] }
+            bindings   = [ HttpBinding.createSimple HTTP host UDF.port.Value ] }
 
     startWebServer suaveConfig webApp
 

@@ -16,9 +16,9 @@ with
             let (Table excelFrame) = x
             ExcelFrame.toArray2DWithHeader excelFrame
 
-    static member Convert() =
-        ExcelFrame.ofArray2DWithHeader >> Table
-        |> CustomParamConversion.array2D
+    static member Convert (input: obj[,]) =
+        ExcelFrame.ofArray2DWithHeader input 
+        |> Table
 
 [<RequireQualifiedAccess>]
 module Table =

@@ -1,11 +1,10 @@
 ﻿// Learn more about F# at http://fsharp.org
 
 open System
-open CellScript.Server.Main
-open System.IO
-
+open CellScript.Client.Tests.Registration
 
 [<EntryPoint>]
 let main argv =
-    runCellScriptServer {WorkingDir = Path.GetDirectoryName __SOURCE_DIRECTORY__}
+    let f = excelFunctions()
+    printfn "Hello World from F#!"
     0 // return an integer exit code

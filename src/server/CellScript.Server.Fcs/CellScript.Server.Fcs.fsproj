@@ -21,5 +21,4 @@
   <ItemGroup>
     <ProjectReference Include="..\CellScript.Core\CellScript.Core.fsproj" />
   </ItemGroup>
-  <Import Project="..\..\..\.paket\Paket.Restore.targets" />
 </Project>

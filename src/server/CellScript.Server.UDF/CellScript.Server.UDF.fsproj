@@ -8,6 +8,13 @@
     <Compile Include="../../shared/Route.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
-  <Import Project="..\..\..\.paket\Paket.Restore.targets" />
+
+  <ItemGroup>
+    <ProjectReference Include="..\CellScript.Core\CellScript.Core.fsproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Update="FSharp.Core" Version="4.6.2" />
+  </ItemGroup>
 
 </Project>

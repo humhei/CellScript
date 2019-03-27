@@ -11,11 +11,7 @@ open CellScript.Core.Extensions
 open Deedle
 
 module Extensions =
-    [<RequireQualifiedAccess>]
-    module String =
-        let returnZH (text: string) =
-            let m = Regex.Match(text,"[\\u4e00-\\u9fa5]+")
-            m.Value
+
 
     [<RequireQualifiedAccess>]
     module LiteRepository =

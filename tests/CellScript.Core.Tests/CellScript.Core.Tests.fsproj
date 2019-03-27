@@ -13,6 +13,7 @@
     <Compile Include="Literals.fs" />
     <Compile Include="LiteDB.fs" />
     <Compile Include="PivotTable.fs" />
+    <Compile Include="Common.fs" />
   </ItemGroup>
   <Import Project="..\..\.paket\Paket.Restore.targets" />
 </Project>

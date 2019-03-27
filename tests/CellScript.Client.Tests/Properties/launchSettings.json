@@ -1,0 +1,9 @@
+{
+  "profiles": {
+    "CellScript.Client.Tests": {
+      "commandName": "Executable",
+      "executablePath": "C:\\Program Files\\Microsoft Office\\root\\Office16\\EXCEL.EXE",
+      "commandLineArgs": "\"D:\\VsCode\\Github\\CellScript\\tests\\CellScript.Client.Tests\\bin\\Debug\\net462\\CellScript.Client.Tests-AddIn64.xll\""
+    }
+  }
+}

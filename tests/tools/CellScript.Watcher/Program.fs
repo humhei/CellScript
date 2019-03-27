@@ -23,6 +23,11 @@ let root =
     |> Path.getFullName
 
 
+let projectPath = root </> "tests" </> "CellScript.Client.Tests"
+
+let projectDir = Path.getDirectory projectPath
+
+let projectName = Path.GetFileNameWithoutExtension projectDir
 
 module VscodeHelper =
 
@@ -85,9 +90,8 @@ open FcsWatch.DebuggingServer
 
 [<EntryPoint>]
 let main argv =
-    let addInPath = root </> "tests/CellScript.Client.Tests/bin/debug/net462/CellScript.Client.Tests-AddIn64.xll"
     // let addInName = "CellScript.Client.Tests-AddIn64"
-    let addInNameStarter = "CellScript.Client.Tests"
+    let addInNameStarter = projectName
     let app =
         let appInbox =
             Process.GetProcesses()
@@ -102,7 +106,7 @@ let main argv =
 
         // let app = new ApplicationClass()
         let procId = getPidFromHwnd appInbox.Hwnd
-        let xlPath = root </> "tests/CellScript.Client.Tests/datas/book1.xlsx"
+        let xlPath = projectDir </> "datas/book1.xlsx"
         // let app = new ApplicationClass()
         let workbooks = appInbox.Workbooks
         let workbook = workbooks.Open(Filename = xlPath, Editable = true)
@@ -122,10 +126,9 @@ let main argv =
     addIn.Installed <- false
     app.Visible <- true
 
-    let projectFile = root </> "tests/CellScript.Client.Tests/CellScript.Client.Tests.fsproj"
-    let projectDir = Path.getDirectory projectFile
+    let projectFile = projectDir </> sprintf "%s.fsproj" projectName
 
-    DotNet.build (fun ops -> {ops with Configuration = DotNet.BuildConfiguration.Debug }) projectFile
+    //DotNet.build (fun ops -> {ops with Configuration = DotNet.BuildConfiguration.Debug }) projectFile
 
     addIn.Installed <- true
 

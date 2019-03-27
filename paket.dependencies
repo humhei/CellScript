@@ -13,6 +13,7 @@ group client
     source https://api.nuget.org/v3/index.json
     nuget ExcelDna.Registration.FSharp
     nuget Fable.Remoting.DotnetClient
+    nuget System.Net.Http
 
 group server
     source https://api.nuget.org/v3/index.json

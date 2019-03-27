@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net462</TargetFramework>
@@ -15,13 +15,12 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Registration.fs" />
-    <Compile Include="UDF.fs" />
     <None Include="Properties/ExcelDna.Build.props" />
     <None Include="CellScript.Client.Tests-AddIn.dna" />
   </ItemGroup>
-  <Import Project="..\..\paket-files\client\github.com\humhei\AddIn_Package_Updated\ExcelDna.AddIn\tools\ExcelDna.AddIn.targets" />
-  <Target Name="PostBuild" AfterTargets="PostBuildEvent">
+  <!--<Import Project="..\..\paket-files\client\github.com\humhei\AddIn_Package_Updated\ExcelDna.AddIn\tools\ExcelDna.AddIn.targets" />-->
+  <!--<Target Name="PostBuild" AfterTargets="PostBuildEvent">
     <Exec Command="copy &quot;$(TargetPath).config&quot; &quot;$(TargetDir)$(TargetName)-AddIn64.xll.config&quot; /Y&#xD;&#xA;copy &quot;$(TargetPath).config&quot; &quot;$(TargetDir)$(TargetName)-AddIn64-packed.xll.config&quot; /Y" />
-  </Target>
+  </Target>-->
   <Import Project="..\..\.paket\Paket.Restore.targets" />
 </Project>

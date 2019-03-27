@@ -11,9 +11,13 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\..\..\..\Github\FCSWatch\src\FcsWatch\FcsWatch.fsproj" />
+    <PackageReference Include="ExcelDna.Registration.FSharp" Version="0.34.7" />
   </ItemGroup>
 
-  <Import Project="..\..\..\.paket\Paket.Restore.targets" />
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\..\FCSWatch\src\FcsWatch\FcsWatch.fsproj" />
+  </ItemGroup>
+
+
 
 </Project>

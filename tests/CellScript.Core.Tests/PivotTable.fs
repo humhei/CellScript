@@ -33,79 +33,45 @@ module PivotTable =
               KeeperHeaders = others
               TransferAbleHeaders = sizeHeaders }
 
-    [<CustomParamConversion>]
-    type PlainPivotTable =
-        { Frame: ExcelFrame<int,string>
-          Header: PivotHeader }
-    with
-        static member Convert() =
-            Table.Convert()
-            |> CustomParamConversion.mapM (fun (table) ->
-                { Frame = Table.value table
-                  Header = PivotHeader.ofHeaders table.Headers }
-            )
+    //[<CustomParamConversion>]
+    //type PlainPivotTable =
+    //    { Frame: ExcelFrame<int,string>
+    //      Header: PivotHeader }
+    //with
+    //    static member Convert() =
+    //        Table.Convert()
+    //        |> CustomParamConversion.mapM (fun (table) ->
+    //            { Frame = Table.value table
+    //              Header = PivotHeader.ofHeaders table.Headers }
+    //        )
 
-    [<RequireQualifiedAccess>]
-    module PlainPivotTable =
-        let transfer (pvt: PlainPivotTable) =
-            let frame = pvt.Frame.AsFrame
-            let transferAbleHeaders = pvt.Header.TransferAbleHeaders
-            let keeperHeaders = pvt.Header.KeeperHeaders
-            let transferHeaderKey, valueHeaderKey = pvt.Header.HeaderKey
+    //[<RequireQualifiedAccess>]
+    //module PlainPivotTable =
+    //    let transfer (pvt: PlainPivotTable) =
+    //        let frame = pvt.Frame.AsFrame
+    //        let transferAbleHeaders = pvt.Header.TransferAbleHeaders
+    //        let keeperHeaders = pvt.Header.KeeperHeaders
+    //        let transferHeaderKey, valueHeaderKey = pvt.Header.HeaderKey
 
-            frame
-            |> Frame.mapRowValues (fun row ->
-                let baseRow =
-                    row
-                    |> Series.filter (fun k v ->
-                        List.contains k keeperHeaders
-                    )
-                let resizedRows =
-                    transferAbleHeaders
-                    |> List.map (fun header ->
-                        [transferHeaderKey => box header; valueHeaderKey => row.[header]]
-                        |> Series.ofObservations
-                        |> Series.merge baseRow
-                    )
-                resizedRows
-            )
-            |> Series.values
-            |> Seq.concat
-            |> Frame.ofRowsOrdinal
-            |> Frame.indexRowsOrdinally
-            |> ExcelFrame
-            |> Table
-
-
-    // type TransferAbleHeader =
-    //     { HeaderKey: string * string
-    //       Headers: string list }
-
-    // [<RequireQualifiedAccess>]
-    // type TwoRowHeader =
-    //     | Normal of string
-    //     | TransferAble of TransferAbleHeader
-
-    // [<CustomParamConversion>]
-    // type TwoRowHeaderPivotTable =
-    //     { Frame: ExcelFrame<int, TwoRowHeader> }
-    // with
-    //     static member Convert() =
-    //         fun (inputs: obj[,]) ->
-    //             let rebased =
-    //                 inputs
-    //                 |> Array2D.rebase
-
-    //             let headers =
-
-    //                 let firstRow = rebased.[0,*]
-    //                 let secondRow = rebased.[1,*]
-    //                 (firstRow, secondRow)
-    //                 ||> Array.map2 (fun firstValue sencondValue ->
-    //                     match (Some firstValue,Some sencondValue) with
-    //                     | CellValue.HasSense _, CellValue.NoSense ->
-    //                         TwoRowHeader.Normal (string firstValue)
-    //                     | CellValue.HasSense _, CellValue.HasSense _ ->
-
-
-    //                 )
+    //        frame
+    //        |> Frame.mapRowValues (fun row ->
+    //            let baseRow =
+    //                row
+    //                |> Series.filter (fun k v ->
+    //                    List.contains k keeperHeaders
+    //                )
+    //            let resizedRows =
+    //                transferAbleHeaders
+    //                |> List.map (fun header ->
+    //                    [transferHeaderKey => box header; valueHeaderKey => row.[header]]
+    //                    |> Series.ofObservations
+    //                    |> Series.merge baseRow
+    //                )
+    //            resizedRows
+    //        )
+    //        |> Series.values
+    //        |> Seq.concat
+    //        |> Frame.ofRowsOrdinal
+    //        |> Frame.indexRowsOrdinally
+    //        |> ExcelFrame
+    //        |> Table

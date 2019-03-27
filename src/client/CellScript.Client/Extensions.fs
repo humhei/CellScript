@@ -14,7 +14,7 @@ module ExcelRangeBase =
             let dir = XlCall.Excel(XlCall.xlfGetDocument,2,retrievedSheetName) :?> string
             let name = XlCall.Excel(XlCall.xlfGetDocument,88,retrievedSheetName) :?> string
             Path.Combine(dir,name)
-
+                
         let sheetName =
             String.rightOf "]" retrievedSheetName
 

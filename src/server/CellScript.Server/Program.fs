@@ -14,14 +14,16 @@ let main argv =
     let webApp =
 
         let init clientDispatch () =
-            SomeMsg "", Cmd.none
+            OuterMsg.No, Cmd.none
 
         let update clientDispatch msg model =
+            clientDispatch (First FIA)
             printfn "%A" msg
-            SomeMsg "", Cmd.none
+            OuterMsg.No, Cmd.none
 
         let server =
             Bridge.mkServer Routed.endpoint init update
+            |> Bridge.register First
             |> Bridge.run Suave2.server
 
 

@@ -12,8 +12,14 @@ module Routed =
     let wsUrl = sprintf "ws://%s" url
 
 
-[<RequireQualifiedAccess>]
-type OuterMsg = // That's the one the update expects
-  | SomeMsg of table: Table
-  | None
+type FirstInnerMsg =
+  | FIA
+  | FIB
+type SecondInnerMsg =
+  | SIA
+  | SIB
 
+type OuterMsg = // That's the one the update expects
+  | No
+  | First of FirstInnerMsg
+  | Second of SecondInnerMsg

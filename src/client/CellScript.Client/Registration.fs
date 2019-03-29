@@ -40,27 +40,35 @@ module Registration =
 
 
     let init() =
-        OuterMsg.None, Cmd.none
+        OuterMsg.No, Cmd.none
 
     let update msg model =
         Bridge.Send msg
+        printfn "%A" msg
         model, Cmd.none
 
 
     let view model (dispatch: Dispatch<OuterMsg>) =
-        let s = typeof<OuterMsg>
-        let ucis = FSharpType.GetUnionCases s
-        let s = ucis.[0].DeclaringType.GetMethods().[0]
-        let p = s.GetParameters()
-        let k = p.[0].Name
-        let expr = 
-            <@ 
-                fun (table) -> Table.op_ErasedCast table
-
-            @>
-        let kp = expr.Compile()
+        //let s = typeof<OuterMsg>
+        //let ucis = FSharpType.GetUnionCases s
+        //let s = ucis.[0].DeclaringType.GetMethods().[0]
+        //let p = s.GetParameters()
+        //let k = p.[0].Name
+        //let expr = 
+        //    <@ 
+        //        fun (table) -> 
+        //            let table = Table.op_ErasedCast table
+        //            let msg = OuterMsg.SomeMsg table
+        //            dispatch 
+        //    @>
+        //let paramType = p.[0].ParameterType
+        let timer = new Timer(500.)
+        timer.Elapsed.Add (fun _ ->
+            dispatch (First FIA)
+        )
+        timer.Start()
         []
-
+        
     let excelFunctions() =
         Program.mkProgram init update view
         |> Program.withBridge Routed.wsUrl

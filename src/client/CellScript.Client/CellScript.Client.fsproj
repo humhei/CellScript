@@ -10,7 +10,6 @@
     <ProjectReference Include="..\..\server\CellScript.Core\CellScript.Core.fsproj">
       <Name>CellScript.Core.fsproj</Name>
     </ProjectReference>
-    <ProjectReference Include="..\Elmish.Bridge.DotnetClient\Elmish.Bridge.DotnetClient.fsproj" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Extensions.fs" />

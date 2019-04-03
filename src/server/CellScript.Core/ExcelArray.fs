@@ -22,6 +22,7 @@ type ExcelArray(frame: ExcelFrame<int,int>) =
 
     member x.AsExcelFrame = frame
 
+    member x.AsArray2D = serializedData
 
 
 [<RequireQualifiedAccess>]

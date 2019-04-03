@@ -8,7 +8,6 @@ open OfficeOpenXml
 module Extensions =
 
 
-
     [<RequireQualifiedAccess>]
     type LambdaExpressionStatic =
         static member ofFun(exp: Expression<Func<_,_>>) =
@@ -89,6 +88,13 @@ module Extensions =
             | "System.Object" -> box |> box
             | _ -> failwith "not implemented"
 
+        let isSomeModuleOrNamespace (type1: Type) (type2: Type) =
+            let prefixName (tp: Type) = 
+                let name = tp.Name
+                let fullName = tp.FullName
+                fullName.Remove(fullName.Length - name.Length - 1)
+            prefixName type1 = prefixName type2
+
     [<RequireQualifiedAccess>]
     module String =
         open System
@@ -108,6 +114,7 @@ module Extensions =
             let index = input.IndexOf(pattern)
             input.Substring(index + 1)
 
+            
 
     [<RequireQualifiedAccess>]
     module Array2D =

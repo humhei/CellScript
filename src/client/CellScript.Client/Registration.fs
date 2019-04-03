@@ -1,101 +1,53 @@
 namespace CellScript.Client
-open ExcelDna.Integration
 open ExcelDna.Registration
 open System
-open System.Reflection
 open CellScript.Core.Registration
 open System.Linq.Expressions
-open Elmish
-open Elmish.Bridge
 open CellScript.Core
-open System.Timers
-open Microsoft.FSharp.Reflection
-open FSharp.Quotations.Evaluator
+open Akkling
+open CellScript.Core.Client
+open FSharp.Quotations
+open Akka.Util
+
 
 [<RequireQualifiedAccess>]
 module Registration =
 
-    [<RequireQualifiedAccess>]
-    module Assembly =
-        let getAllExportMethods (assembly: Assembly) =
-            assembly.ExportedTypes
-            |> Seq.collect (fun exportType ->
-                exportType.GetMethods()
-            )
+    [<AutoOpen>]
+    module Akka =
+        let client = System.create "client" <| Configuration.parse Routed.clientConfig
 
-        let getAllExportMethodsWithSpecificAttribute (attributeType: Type) (assembly: Assembly) =
-            getAllExportMethods assembly
-            |> Seq.filter (fun methodInfo ->
-                methodInfo.CustomAttributes |> Seq.exists (fun attribute ->
-                    attribute.AttributeType = attributeType
-                )
-            )
-
-        let excelFunctions assembly =
-            getAllExportMethodsWithSpecificAttribute typeof<ExcelFunctionAttribute> assembly
-            |> Seq.map ExcelFunctionRegistration
-            |> List.ofSeq
+        let clientAgent =
+            Routed.remote <- Remote.Client
+            spawn client "remote-actor" (Routed.remoteProps())
 
 
+    let excelFunctions() = 
 
+        expected1 <- 
+            let expr = <@ fun table -> call clientAgent (OuterMsg.TestTable table) @> :> Expr
+            Some expr
 
-    let init() =
-        OuterMsg.No, Cmd.none
+        expected2 <- 
+            let expr = 
+                (<@ fun (table: obj[,]) -> 
+                    call clientAgent (OuterMsg.TestTable (((Array2D table) :> ISurrogate).FromSurrogate client :?> Table))
+                @>) :> Expr
+            Some expr
 
-    let update msg model =
-        Bridge.Send msg
-        printfn "%A" msg
-        model, Cmd.none
-
-
-    let view model (dispatch: Dispatch<OuterMsg>) =
-        //let s = typeof<OuterMsg>
-        //let ucis = FSharpType.GetUnionCases s
-        //let s = ucis.[0].DeclaringType.GetMethods().[0]
-        //let p = s.GetParameters()
-        //let k = p.[0].Name
-        //let expr = 
-        //    <@ 
-        //        fun (table) -> 
-        //            let table = Table.op_ErasedCast table
-        //            let msg = OuterMsg.SomeMsg table
-        //            dispatch 
-        //    @>
-        //let paramType = p.[0].ParameterType
-        let timer = new Timer(500.)
-        timer.Elapsed.Add (fun _ ->
-            dispatch (First FIA)
-        )
-        timer.Start()
-        []
-        
-    let excelFunctions() =
-        Program.mkProgram init update view
-        |> Program.withBridge Routed.wsUrl
-        |> Program.run
-        //functions
-        []
+        Registration.apiLambdas<OuterMsg> (Expr.Value clientAgent)
+        |> Array.map (fun lambda -> ExcelFunctionRegistration lambda)
 
     [<RequireQualifiedAccess>]
     module CustomParamConversion =
-
         let register originType (param: ExcelParameterRegistration) =
             CustomParamConversion.register originType (fun conversion ->
                 param.ArgumentAttribute.AllowReference <- conversion.IsRef
             )
 
-    [<RequireQualifiedAccess>]
-    module ICustomReturn =
-        let register (tp: Type) (_: ExcelReturnRegistration) =
-            ICustomReturn.register tp
-
     let paramConvertConfig =
         let funcParam f =
             Func<Type,ExcelParameterRegistration,LambdaExpression>(f)
 
-        let funcReturn f =
-            Func<Type,ExcelReturnRegistration,LambdaExpression>(f)
-
         ParameterConversionConfiguration()
             .AddParameterConversion(funcParam(CustomParamConversion.register),null)
-            .AddReturnConversion(funcReturn(ICustomReturn.register),null)

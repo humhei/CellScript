@@ -165,42 +165,4 @@ module Registration =
                 lambda
             | None -> null
 
-    type ICustomReturn =
-        abstract member ReturnValue: unit -> obj[,]
 
-    [<RequireQualifiedAccess>]
-    module ICustomReturn =
-        let returnValue (material: 'T when 'T :> ICustomReturn) =
-            material.ReturnValue()
-
-
-        let private returncConversionTypeMapping =
-            new ConcurrentDictionary<Type,LambdaExpression>()
-
-        let private asArray2d<'value>() =
-            LambdaExpressionStatic.ofFun (fun (value: 'value) ->
-                [[box value]]
-                |> array2D
-            )
-
-        let register (paramType: Type) =
-            returncConversionTypeMapping.GetOrAdd(paramType,fun _ ->
-                paramType.GetInterfaces()
-                |> Array.tryFind (fun it -> it.FullName = typeof<ICustomReturn>.FullName)
-                |> function
-                    | Some _ ->
-                        LambdaExpressionStatic.ofFun (fun (value: obj) ->
-                            match value with
-                            | :? ICustomReturn as iReturn ->
-                                iReturn.ReturnValue()
-                            | _ -> null
-                        )
-                    | _ ->
-                        match paramType.FullName with
-                        | "System.Int32" -> asArray2d<int>()
-                        | "System.String" -> asArray2d<string>()
-                        | "System.Boolean" -> asArray2d<bool>()
-                        | "System.Double" -> asArray2d<float>()
-                        | _ ->
-                            null
-            )

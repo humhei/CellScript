@@ -20,6 +20,15 @@ module Types =
           WorkbookPath: string
           SheetName: string }
 
+    type SerializableExcelReference =
+        { ColumnFirst: int
+          RowFirst: int
+          ColumnLast: int
+          RowLast: int
+          WorkbookPath: string
+          SheetName: string
+          Values: obj[,] }
+
 
     [<RequireQualifiedAccess>]
     type ExcelInput =

@@ -8,7 +8,9 @@ open CellScript.Client
 let excelFunctions() =
     Registration.excelFunctions()
     |> List.ofSeq
-    |> fun fns -> ParameterConversionRegistration.ProcessParameterConversions (fns, Registration.paramConvertConfig)
+    |> fun fns -> 
+        let s = ParameterConversionRegistration.ProcessParameterConversions (fns, Registration.paramConvertConfig)
+        s
     |> FsAsyncRegistration.ProcessFsAsyncRegistrations
     |> AsyncRegistration.ProcessAsyncRegistrations
     |> ParamsRegistration.ProcessParamsRegistrations

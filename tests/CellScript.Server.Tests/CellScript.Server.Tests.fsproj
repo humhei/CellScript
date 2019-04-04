@@ -10,8 +10,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\CellScript.Core\CellScript.Core.fsproj" />
+    <ProjectReference Include="..\CellScript.Core.Tests\CellScript.Core.Tests.fsproj" />
   </ItemGroup>
+
 
   <ItemGroup>
     <PackageReference Update="FSharp.Core" Version="4.6.2" />

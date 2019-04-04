@@ -1,53 +1,60 @@
 namespace CellScript.Client
 open ExcelDna.Registration
-open System
-open CellScript.Core.Registration
-open System.Linq.Expressions
 open CellScript.Core
-open Akkling
-open CellScript.Core.Client
-open FSharp.Quotations
-open Akka.Util
-
+open ExcelDna.Integration
+open System.IO
+open CellScript.Core.Types
+open ExcelDna.Integration
+open System
+open System.Linq.Expressions
 
 [<RequireQualifiedAccess>]
 module Registration =
+    let private toSerialbleExcelReference (input: obj): SerializableExcelReference =
+        let xlRef = input :?> ExcelReference
 
-    [<AutoOpen>]
-    module Akka =
-        let client = System.create "client" <| Configuration.parse Routed.clientConfig
+        let retrievedSheetName = XlCall.Excel(XlCall.xlSheetNm,xlRef) :?> string
 
-        let clientAgent =
-            Routed.remote <- Remote.Client
-            spawn client "remote-actor" (Routed.remoteProps())
+        let workbookPath =
+            let dir = XlCall.Excel(XlCall.xlfGetDocument,2,retrievedSheetName) :?> string
+            let name = XlCall.Excel(XlCall.xlfGetDocument,88,retrievedSheetName) :?> string
+            Path.Combine(dir,name)
 
+        let sheetName =
+            let rightOf (pattern: string) (input: string) =
+                let index = input.IndexOf(pattern)
+                input.Substring(index + 1)
 
-    let excelFunctions() = 
+            rightOf "]" retrievedSheetName
 
-        expected1 <- 
-            let expr = <@ fun table -> call clientAgent (OuterMsg.TestTable table) @> :> Expr
-            Some expr
+        { ColumnFirst = xlRef.ColumnFirst
+          ColumnLast = xlRef.ColumnLast
+          RowFirst = xlRef.RowFirst
+          Content = xlRef.GetValue() |> unbox
+          RowLast = xlRef.RowLast 
+          WorkbookPath = workbookPath 
+          SheetName = sheetName }
 
-        expected2 <- 
-            let expr = 
-                (<@ fun (table: obj[,]) -> 
-                    call clientAgent (OuterMsg.TestTable (((Array2D table) :> ISurrogate).FromSurrogate client :?> Table))
-                @>) :> Expr
-            Some expr
-
-        Registration.apiLambdas<OuterMsg> (Expr.Value clientAgent)
-        |> Array.map (fun lambda -> ExcelFunctionRegistration lambda)
-
-    [<RequireQualifiedAccess>]
-    module CustomParamConversion =
-        let register originType (param: ExcelParameterRegistration) =
-            CustomParamConversion.register originType (fun conversion ->
-                param.ArgumentAttribute.AllowReference <- conversion.IsRef
+    let private parameterConfig =
+        ParameterConversionConfiguration()
+            .AddParameterConversion(fun (input: obj) ->
+                toSerialbleExcelReference input
             )
 
-    let paramConvertConfig =
-        let funcParam f =
-            Func<Type,ExcelParameterRegistration,LambdaExpression>(f)
+    let excelFunctions (client: Client<'Msg>) = 
+        let remote = Remote(RemoteKind.Client client)
+        Client.apiLambdas remote.RemoteActor.Value client
+        |> Array.map (fun lambda -> 
+            let excelFunction = ExcelFunctionRegistration lambda
+            excelFunction.FunctionLambda.Parameters
+            |> Seq.iteri (fun i parameter ->
+                if parameter.Type = typeof<SerializableExcelReference> then
+                    excelFunction.ParameterRegistrations.[i].ArgumentAttribute.AllowReference <- true
+            )
+            excelFunction.FunctionAttribute.IsMacroType <- 
+                excelFunction.ParameterRegistrations |> Seq.exists (fun paramReg -> paramReg.ArgumentAttribute.AllowReference)
+            excelFunction
+        )
+        |> fun fns ->
+            ParameterConversionRegistration.ProcessParameterConversions (fns, parameterConfig)
 
-        ParameterConversionConfiguration()
-            .AddParameterConversion(funcParam(CustomParamConversion.register),null)

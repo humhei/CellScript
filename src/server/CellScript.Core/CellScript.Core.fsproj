@@ -6,11 +6,11 @@
     <Compile Include="Extensions.fs" />
     <Compile Include="Types.fs" />
     <Compile Include="Logger.fs" />
-    <Compile Include="Registration.fs" />
     <Compile Include="ExcelArray.fs" />
     <Compile Include="Table.fs" />
-    <Compile Include="ExcelSeries.fs" />
-    <Compile Include="Routed.fs" />
+    <Compile Include="ExcelVector.fs" />
+    <Compile Include="Client.fs" />
+    <Compile Include="Remote.fs" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Akka.Remote" Version="1.3.12" />

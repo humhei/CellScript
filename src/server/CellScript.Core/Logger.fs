@@ -74,6 +74,4 @@ module Logger =
 
     let create level = Logger(level)
 
-[<AutoOpen>]
-module Global =
-    let logger = Logger.create Logger.Level.Normal
+  

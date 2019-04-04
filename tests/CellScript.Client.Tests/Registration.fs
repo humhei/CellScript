@@ -4,13 +4,19 @@ open ExcelDna.Registration
 open CellScript.Core
 open ExcelDna.Registration.FSharp
 open CellScript.Client
+open CellScript.Core.Tests
+
+[<AutoOpen>]
+module internal Global =
+    let logger = Logger.create Logger.Level.Normal
+
+
+let client: Client<OuterMsg> = 
+    { ClientPort = 6000 
+      ServerPort = 6001 }
 
 let excelFunctions() =
-    Registration.excelFunctions()
-    |> List.ofSeq
-    |> fun fns -> 
-        let s = ParameterConversionRegistration.ProcessParameterConversions (fns, Registration.paramConvertConfig)
-        s
+    Registration.excelFunctions client
     |> FsAsyncRegistration.ProcessFsAsyncRegistrations
     |> AsyncRegistration.ProcessAsyncRegistrations
     |> ParamsRegistration.ProcessParamsRegistrations

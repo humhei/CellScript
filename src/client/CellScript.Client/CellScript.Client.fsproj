@@ -10,7 +10,6 @@
     <ProjectReference Include="..\..\server\CellScript.Core\CellScript.Core.fsproj">
       <Name>CellScript.Core.fsproj</Name>
     </ProjectReference>
-    <ProjectReference Include="..\CellScript.Core.Client\CellScript.Core.Client.fsproj" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Extensions.fs" />

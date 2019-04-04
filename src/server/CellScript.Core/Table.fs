@@ -1,51 +1,44 @@
 namespace CellScript.Core
 open Deedle
-open Registration
 open CellScript.Core.Extensions
 open Types
-open Newtonsoft.Json
 open Akka.Util
 
+type Table = Table of ExcelFrame<int, string>
+with 
+    member x.AsExcelFrame = 
+        let (Table frame) = x
+        frame
 
+    member x.AsFrame = 
+        let (Table frame) = x
+        frame.AsFrame
+                   
+    member x.ToArray2D() =
+        ExcelFrame.toArray2DWithHeader x.AsExcelFrame
 
-[<CustomParamConversion;JsonObject(MemberSerialization.OptIn)>]
-type Table(frame: ExcelFrame<int, string>) =
-
-    [<JsonProperty>]
-    let serializedData = ExcelFrame.toArray2DWithHeader frame
-
-    [<JsonConstructor>]
-    private new (array2D: obj[,]) =
+    static member Convert array2D =
         let frame = ExcelFrame.ofArray2DWithHeader array2D
-        new Table(frame)
-
-    member x.AsFrame = frame.AsFrame
-
-    member x.AsExcelFrame = frame
-            
-    member x.AsArray2D = serializedData
+        Table frame
 
     static member TempData =
         let param =
             array2D [[box "Header1";box "Header2"]; [1; 2]]
 
-        Table(param)
+        Table.Convert param
 
 
     interface ISurrogated with 
         member x.ToSurrogate(system) = 
-            Array2D x.AsArray2D :> ISurrogate
+            TableSurrogate (x.ToArray2D()) :> ISurrogate
 
-
-and Array2D = Array2D of obj [,]
+and private TableSurrogate = TableSurrogate of obj [,]
 with 
     interface ISurrogate with 
         member x.FromSurrogate(system) = 
-            let (Array2D array2D) = x
-            let excelFrame  = ExcelFrame.ofArray2DWithHeader array2D
-            new Table(excelFrame) :> ISurrogated
+            let (TableSurrogate array2D) = x
+            Table.Convert array2D :> ISurrogated
 
-        
 
 [<RequireQualifiedAccess>]
 module Table =

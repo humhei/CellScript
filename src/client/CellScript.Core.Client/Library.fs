@@ -6,8 +6,9 @@ open Akkling
 open Microsoft.FSharp.Reflection
 open Microsoft.FSharp.Quotations
 open Microsoft.FSharp.Linq.RuntimeHelpers
-open CellScript.Core.Extensions
-open Akka.Util
+open Microsoft.FSharp.Quotations.Patterns
+open System
+open System.Collections.Concurrent
 
 [<AutoOpen>]
 module InternalExprHelper =
@@ -23,9 +24,8 @@ module InternalExprHelper =
             )
 
     /// internal helper function
-    let call (actor: IActorRef<Seriali>) message: obj[,] = 
+    let call (actor: IActorRef<OuterMsg>) message: Async<obj[,]> = 
         actor <? message
-        |> Async.RunSynchronously
 
     let private methods =
         lazy 
@@ -67,6 +67,15 @@ module InternalExprHelper =
             )
             |> Map.ofList
 
+
+[<RequireQualifiedAccess>]
+module private Type =
+    let isSameModuleOrNamespace (type1: Type) (type2: Type) =
+        let prefixName (tp: Type) = 
+            let name = tp.Name
+            let fullName = tp.FullName
+            fullName.Remove(fullName.Length - name.Length - 1)
+        prefixName type1 = prefixName type2
 
 [<RequireQualifiedAccess>]
 module private LambdaExpression =
@@ -112,6 +121,55 @@ module private LambdaExpression =
         | _ -> failwith "Parammeter number more than 5 is not supported now"
 
 
+
+
+
+
+    let tryGetConvertMethod =
+        let convertParamTypeCache = new ConcurrentDictionary<Type, MethodInfo option>()
+        fun (tp: Type) ->
+            convertParamTypeCache.GetOrAdd(tp, fun _ ->
+                let method = 
+                    tp.GetMethods()
+                    |> Array.tryFind (fun methodInfo -> methodInfo.Name = "Convert" && methodInfo.GetParameters().Length = 1)
+                method
+            )
+
+    let getConvertParamType tp = 
+        tryGetConvertMethod tp |> Option.map (fun method ->
+            method.GetParameters().[0].ParameterType
+        )
+
+    let convertParam (lambda: Expr) =
+
+        let fixLambda (var: Var) =
+            match getConvertParamType var.Type with 
+            | Some convertParamType ->
+                Var(var.Name, convertParamType)
+            | None -> var
+
+        let fixInner newVar (var: Var) =
+            match tryGetConvertMethod var.Type with 
+            | Some convertMethod ->
+                Expr.Call(convertMethod, [Expr.Var newVar])
+            | None -> Expr.Var var
+
+        let rec loop varAccums expr =  
+            match expr with 
+            | Lambda (var, expr) ->
+                let newVar = fixLambda var
+                let newAccums = Map.add var newVar varAccums
+                Expr.Lambda(newVar, loop newAccums expr)
+            | Call (_ , methodInfo, args) ->
+                Expr.Call(methodInfo, List.map (loop varAccums) args)
+            | NewUnionCase (uci, args) ->
+                Expr.NewUnionCase (uci, List.map (loop varAccums) args)
+            | Var (expr) ->
+                fixInner varAccums.[expr] expr
+            | _ -> expr
+
+        loop Map.empty lambda
+
     let private (|InnerMsg|Params|) (uci: UnionCaseInfo) =
         let method = 
             uci.DeclaringType.GetMethods()
@@ -125,20 +183,12 @@ module private LambdaExpression =
             let paramType = parameter.ParameterType
             let name = paramType.Name
             if name.EndsWith "Msg" 
-                && Type.isSomeModuleOrNamespace paramType uci.DeclaringType
+                && Type.isSameModuleOrNamespace paramType uci.DeclaringType
                 && FSharpType.IsUnion paramType  
             then 
                 InnerMsg (paramType)
             else Params (parameters)
         | _ -> Params (parameters)
-
-
-
-
-    let convertParam (lambda: Expr) =
-        let expected1 = expected1
-        let expected2 = expected2
-        lambda
 
     let ofUci clientAgent (uci: UnionCaseInfo) =
         let rec loop uciAccum uci =

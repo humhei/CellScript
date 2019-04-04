@@ -6,20 +6,6 @@ open Newtonsoft.Json
 
 module Types =
 
-    type ExcelReference =
-        { ColumnFirst: int
-          RowFirst: int
-          ColumnLast: int
-          RowLast: int }
-
-    type ExcelReferenceWithFileInfo =
-        { ColumnFirst: int
-          RowFirst: int
-          ColumnLast: int
-          RowLast: int
-          WorkbookPath: string
-          SheetName: string }
-
     type SerializableExcelReference =
         { ColumnFirst: int
           RowFirst: int
@@ -27,36 +13,25 @@ module Types =
           RowLast: int
           WorkbookPath: string
           SheetName: string
-          Values: obj[,] }
+          Content: obj[,] }
 
 
-    [<RequireQualifiedAccess>]
-    type ExcelInput =
-        | Ref of ExcelReferenceWithFileInfo
-        | Single of obj
-        | Array2D of obj[,]
-
-    type ExcelEmpty() = class end
-    type ExcelError() = class end
-
+    type internal ExcelEmpty() = class end
+    type internal ExcelError() = class end
 
     [<RequireQualifiedAccess>]
-    module CellValue =
+    module internal CellValue =
         let private isArrayEmpty (v: obj) =
             match v with
             | :? float as v -> v = 0.
             | _ -> false
 
-        let private isNotArrayEmpty (v: obj) =
-            isArrayEmpty v |> not
 
         let private isTextEmpty (v: obj) =
             match v with
             | :? string as v -> v = ""
             | _ -> false
 
-        let private isNotTextEmpty (v: obj) =
-            isTextEmpty v |> not
 
         let private isEmpty (v: obj) =
             isArrayEmpty v || isTextEmpty v

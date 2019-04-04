@@ -1,28 +1,36 @@
 namespace CellScript.Core
 open Deedle
-open Registration
 open CellScript.Core.Extensions
 open Types
 open Newtonsoft.Json
+open Akka.Util
 
-[<CustomParamConversion>]
-type ExcelArray(frame: ExcelFrame<int,int>) = 
-    [<System.NonSerialized>]
-    let frame = frame
+type ExcelArray = ExcelArray of ExcelFrame<int,int>
+with
 
-    [<JsonProperty>]
-    let serializedData = ExcelFrame.toArray2D frame
+    member x.AsExcelFrame = 
+        let (ExcelArray frame) = x
+        frame
 
-    [<JsonConstructor>]
-    new (array2D: obj[,]) =
+    member x.AsFrame = x.AsExcelFrame.AsFrame
+
+    member x.ToArray2D() =
+        ExcelFrame.toArray2D x.AsExcelFrame
+
+    static member Convert(array2D: obj[,]) =
         let frame = ExcelFrame.ofArray2D array2D
-        new ExcelArray(frame)
+        ExcelArray(frame)
 
-    member x.AsFrame = frame.AsFrame
+    interface ISurrogated with 
+        member x.ToSurrogate(system) = 
+            ExcelArraySurrogate (x.ToArray2D()) :> ISurrogate
 
-    member x.AsExcelFrame = frame
-
-    member x.AsArray2D = serializedData
+and private ExcelArraySurrogate = ExcelArraySurrogate of obj [,]
+with 
+    interface ISurrogate with 
+        member x.FromSurrogate(system) = 
+            let (ExcelArraySurrogate array2D) = x
+            ExcelArray.Convert array2D :> ISurrogated
 
 
 [<RequireQualifiedAccess>]

@@ -14,16 +14,17 @@ with
 
     member x.AsFrame = x.AsExcelFrame.AsFrame
 
-    member x.ToArray2D() =
-        ExcelFrame.toArray2D x.AsExcelFrame
-
     static member Convert(array2D: obj[,]) =
         let frame = ExcelFrame.ofArray2D array2D
         ExcelArray(frame)
 
+    interface IToArray2D with 
+        member x.ToArray2D() =
+            ExcelFrame.toArray2D x.AsExcelFrame
+
     interface ISurrogated with 
         member x.ToSurrogate(system) = 
-            ExcelArraySurrogate (x.ToArray2D()) :> ISurrogate
+            ExcelArraySurrogate ((x :> IToArray2D).ToArray2D()) :> ISurrogate
 
 and private ExcelArraySurrogate = ExcelArraySurrogate of obj [,]
 with 

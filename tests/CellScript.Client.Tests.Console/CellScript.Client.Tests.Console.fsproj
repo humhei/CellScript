@@ -7,8 +7,16 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <None Include="Script1.fsx" />
+    <None Include="..\CellScript.Client.Tests\datas\book1.xlsx">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <Compile Include="Tests.fs" />
     <Compile Include="Program.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Expecto" Version="8.10.1" />
+    <PackageReference Include="Fake.IO.FileSystem" Version="5.12.6" />
   </ItemGroup>
 
   <ItemGroup>

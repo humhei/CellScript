@@ -16,4 +16,5 @@ module Msg =
         | TestTable of Table
         | TestInnerMsg of InnerMsg
         | TestString of string
+        | TestExcelVector of ExcelVector
         | TestString2Params of text1: string * text2: string

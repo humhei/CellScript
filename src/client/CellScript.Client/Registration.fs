@@ -7,6 +7,7 @@ open CellScript.Core.Types
 open ExcelDna.Integration
 open System
 open System.Linq.Expressions
+open Remote
 
 [<RequireQualifiedAccess>]
 module Registration =
@@ -30,7 +31,11 @@ module Registration =
         { ColumnFirst = xlRef.ColumnFirst
           ColumnLast = xlRef.ColumnLast
           RowFirst = xlRef.RowFirst
-          Content = xlRef.GetValue() |> unbox
+          Content = 
+            let value = xlRef.GetValue()
+            let tp = value.GetType()
+            if tp.IsArray then unbox value
+            else array2D[[value]]
           RowLast = xlRef.RowLast 
           WorkbookPath = workbookPath 
           SheetName = sheetName }
@@ -41,9 +46,9 @@ module Registration =
                 toSerialbleExcelReference input
             )
 
-    let excelFunctions (client: Client<'Msg>) = 
-        let remote = Remote(RemoteKind.Client client)
-        Client.apiLambdas remote.RemoteActor.Value client
+    let excelFunctions<'Msg>() = 
+        let client: CellScriptClient<'Msg> = CellScriptClient.create()
+        CellScriptClient.apiLambdas client
         |> Array.map (fun lambda -> 
             let excelFunction = ExcelFunctionRegistration lambda
             excelFunction.FunctionLambda.Parameters
@@ -58,3 +63,6 @@ module Registration =
         |> fun fns ->
             ParameterConversionRegistration.ProcessParameterConversions (fns, parameterConfig)
 
+
+    let evalFunction()=
+        excelFunctions<FcsMsg>()

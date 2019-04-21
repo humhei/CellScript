@@ -4,19 +4,22 @@ open System
 open CellScript.Core
 open CellScript.Core.Tests
 open Akkling
+open CellScript.Client
+open CellScript.Core.Remote
+open Expecto.Logging
+open Expecto
+
+let testConfig =  
+    { Expecto.Tests.defaultConfig with 
+         parallelWorkers = 1
+         verbosity = LogLevel.Debug }
+
+let tests = 
+    testList "All tests" [ 
+        Tests.udfTests           
+        Tests.evalTests         
+    ] 
 
 [<EntryPoint>]
 let main argv =
-    //let f = excelFunctions()
-    let client: Client<OuterMsg> = 
-        { ClientPort = 6003
-          ServerPort = 6001 }
-    let remote = Remote(RemoteKind.Client client)
-
-    let yes = 
-        remote.RemoteActor.Value <? OuterMsg.TestString "Hello world"
-        |> Async.RunSynchronously
-
-    printfn "Hello World from F#!"
-    Console.ReadLine() |> ignore
-    0 // return an integer exit code
+    runTests testConfig tests

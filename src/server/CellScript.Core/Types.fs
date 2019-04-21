@@ -3,8 +3,12 @@ open Deedle
 open Extensions
 open System
 open Newtonsoft.Json
+open Akka.Util
 
 module Types =
+
+    type IToArray2D =
+        abstract member ToArray2D: unit -> obj[,]
 
     type SerializableExcelReference =
         { ColumnFirst: int

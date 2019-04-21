@@ -1,0 +1,31 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 16
+VisualStudioVersion = 16.0.28803.202
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "CellScript.Server.Fcs", "CellScript.Server.Fcs.fsproj", "{53ABA3C3-87CA-4F28-9D99-2ECB60EDF6E4}"
+EndProject
+Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "CellScript.Client.Tests.Console", "..\..\..\tests\CellScript.Client.Tests.Console\CellScript.Client.Tests.Console.fsproj", "{2A657F94-38D4-4818-992D-FBC45801828C}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{53ABA3C3-87CA-4F28-9D99-2ECB60EDF6E4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{53ABA3C3-87CA-4F28-9D99-2ECB60EDF6E4}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{53ABA3C3-87CA-4F28-9D99-2ECB60EDF6E4}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{53ABA3C3-87CA-4F28-9D99-2ECB60EDF6E4}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2A657F94-38D4-4818-992D-FBC45801828C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2A657F94-38D4-4818-992D-FBC45801828C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2A657F94-38D4-4818-992D-FBC45801828C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2A657F94-38D4-4818-992D-FBC45801828C}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {8E6E6A77-F34D-4A70-9713-E5431A662E85}
+	EndGlobalSection
+EndGlobal

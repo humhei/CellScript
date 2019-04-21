@@ -13,9 +13,6 @@ with
     member x.AsFrame = 
         let (Table frame) = x
         frame.AsFrame
-                   
-    member x.ToArray2D() =
-        ExcelFrame.toArray2DWithHeader x.AsExcelFrame
 
     static member Convert array2D =
         let frame = ExcelFrame.ofArray2DWithHeader array2D
@@ -23,14 +20,17 @@ with
 
     static member TempData =
         let param =
-            array2D [[box "Header1";box "Header2"]; [1; 2]]
+            array2D [[box "US";box "UK";box "EUR"]; [6; 5; 36]; [7; 6; 37]]
 
         Table.Convert param
 
+    interface IToArray2D with 
+        member x.ToArray2D() =
+            ExcelFrame.toArray2DWithHeader x.AsExcelFrame
 
     interface ISurrogated with 
         member x.ToSurrogate(system) = 
-            TableSurrogate (x.ToArray2D()) :> ISurrogate
+            TableSurrogate ((x :> IToArray2D).ToArray2D()) :> ISurrogate
 
 and private TableSurrogate = TableSurrogate of obj [,]
 with 

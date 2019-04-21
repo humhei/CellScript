@@ -1,31 +1,7 @@
-source https://api.nuget.org/v3/index.json
-storage: none
-nuget Deedle prerelease
-nuget FParsec
-nuget Fake.Core.Trace
-source https://ci.appveyor.com/nuget/excelprocesser-489vwnhd0w2m
-nuget ExcelProcesser build
-nuget LiteDB.FSharp
-
-group client
-    redirects: force
-    storage: none
-    source https://api.nuget.org/v3/index.json
-    nuget ExcelDna.Registration.FSharp
-    nuget Fable.Remoting.DotnetClient
-    nuget System.Net.Http
-
-group server
-    source https://api.nuget.org/v3/index.json
-    storage: none
-    nuget Suave = 2.5.0
-    nuget Fable.Remoting.Suave
-    nuget FSharp.Compiler.Service
 
 group build
     storage: none
     source https://api.nuget.org/v3/index.json
     git https://github.com/humhei/AddIn_Package_Updated.git
     nuget ExcelDna.Registration.FSharp
-    nuget Fake.Core.Target
-    nuget FcsWatch prerelease
+    github Ravadre/NLog.FSharp:6aa72d799b792cc7db247f7925eeb6371b17f8ba  NLog.FSharp/Logger.fs

@@ -7,6 +7,12 @@ Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "CellScript.Server.Fcs", "Ce
 EndProject
 Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "CellScript.Client.Tests.Console", "..\..\..\tests\CellScript.Client.Tests.Console\CellScript.Client.Tests.Console.fsproj", "{2A657F94-38D4-4818-992D-FBC45801828C}"
 EndProject
+Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "CellScript.Client.Fcs", "..\..\client\CellScript.Client.Fcs\CellScript.Client.Fcs.fsproj", "{792C28E6-3C56-456C-B450-F97734044105}"
+EndProject
+Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Akka.Persistence.LiteDB.FSharp", "..\..\..\..\Akka.Persistence.LiteDB.FSharp\src\Akka.Persistence.LiteDB.FSharp\Akka.Persistence.LiteDB.FSharp.fsproj", "{34966C83-F72C-4856-A46C-F3769164587C}"
+EndProject
+Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "CellScript.Core", "..\CellScript.Core\CellScript.Core.fsproj", "{324332C5-BCBB-4414-96E8-38DBFD62B761}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -21,6 +27,18 @@ Global
 		{2A657F94-38D4-4818-992D-FBC45801828C}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{2A657F94-38D4-4818-992D-FBC45801828C}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{2A657F94-38D4-4818-992D-FBC45801828C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{792C28E6-3C56-456C-B450-F97734044105}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{792C28E6-3C56-456C-B450-F97734044105}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{792C28E6-3C56-456C-B450-F97734044105}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{792C28E6-3C56-456C-B450-F97734044105}.Release|Any CPU.Build.0 = Release|Any CPU
+		{34966C83-F72C-4856-A46C-F3769164587C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{34966C83-F72C-4856-A46C-F3769164587C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{34966C83-F72C-4856-A46C-F3769164587C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{34966C83-F72C-4856-A46C-F3769164587C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{324332C5-BCBB-4414-96E8-38DBFD62B761}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{324332C5-BCBB-4414-96E8-38DBFD62B761}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{324332C5-BCBB-4414-96E8-38DBFD62B761}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{324332C5-BCBB-4414-96E8-38DBFD62B761}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

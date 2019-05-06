@@ -7,7 +7,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <None Include="..\CellScript.Client.Tests\datas\book1.xlsx">
+    <None Include="..\CellScript.Client.Tests\datas\book1.xlsx" Link="datas\book1.xlsx">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <Compile Include="Tests.fs" />
@@ -20,12 +20,16 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\client\CellScript.Client\CellScript.Client.fsproj" />
+    <ProjectReference Include="..\..\src\client\CellScript.Client.Desktop\CellScript.Client.Desktop.fsproj" />
     <ProjectReference Include="..\CellScript.Core.Tests\CellScript.Core.Tests.fsproj" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Update="FSharp.Core" Version="4.6.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="datas\" />
   </ItemGroup>
 
 </Project>

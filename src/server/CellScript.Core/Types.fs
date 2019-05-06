@@ -4,11 +4,17 @@ open Extensions
 open System
 open Newtonsoft.Json
 open Akka.Util
+open ExcelProcess
+open OfficeOpenXml
 
 module Types =
 
     type IToArray2D =
         abstract member ToArray2D: unit -> obj[,]
+
+    [<AttributeUsage(AttributeTargets.Property)>]
+    type SubMsgAttribute() =
+        inherit Attribute()
 
     type SerializableExcelReference =
         { ColumnFirst: int
@@ -19,6 +25,40 @@ module Types =
           SheetName: string
           Content: obj[,] }
 
+    [<RequireQualifiedAccess>]
+    module SerializableExcelReference =
+
+        let cellAddress (xlRef: SerializableExcelReference) = 
+            ExcelAddress(xlRef.RowFirst, xlRef.ColumnFirst, xlRef.RowLast, xlRef.ColumnLast)
+
+        let createByFile (rangeIndexer: string) sheetName workbookPath =
+            use sheet = Excel.getWorksheetByName sheetName workbookPath
+            use range = sheet.Cells.[rangeIndexer]
+
+            let rowStart = range.Start.Row
+            let rowEnd = range.End.Row
+            let columnStart = range.Start.Column
+            let columnEnd = range.End.Column
+
+            let content =
+                array2D
+                    [ for i = rowStart to rowEnd do 
+                        yield
+                            [ for j = columnStart to columnEnd do yield range.[i,j].Value ]
+                    ] 
+            { ColumnFirst = columnStart
+              RowFirst = rowStart
+              ColumnLast = columnEnd
+              RowLast = rowEnd
+              WorkbookPath = workbookPath
+              SheetName = sheetName
+              Content = content }   
+
+
+        let positionText (xlRef: SerializableExcelReference) = 
+            sprintf "%s_%s_%d_%d_%d_%d" xlRef.WorkbookPath xlRef.SheetName xlRef.RowFirst xlRef.ColumnFirst xlRef.RowLast xlRef.ColumnLast
+
+    type CommandCaller = CommandCaller of SerializableExcelReference
 
     type internal ExcelEmpty() = class end
     type internal ExcelError() = class end

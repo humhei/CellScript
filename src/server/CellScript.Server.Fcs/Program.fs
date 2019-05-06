@@ -12,6 +12,9 @@ open NLog.Web
 open Akkling
 open Microsoft.Extensions.Hosting
 open System.Reflection
+open Hyperion
+open Fake.Core
+open Newtonsoft.Json
 
 // ---------------------------------
 // Models
@@ -131,9 +134,9 @@ let createHostBuilder logger args =
 
 
 
-
 [<EntryPoint>]
 let main args =
+
     let logger = NLog.FSharp.Logger(NLog.Web.NLogBuilder.ConfigureNLog("nlog.config").GetCurrentClassLogger())
     try 
         logger.Debug "int main"

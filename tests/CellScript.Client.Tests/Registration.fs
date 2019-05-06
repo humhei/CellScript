@@ -1,15 +1,18 @@
 module CellScript.Client.Tests.Registration
 open ExcelDna.Integration
 open ExcelDna.Registration
-open CellScript.Core
 open ExcelDna.Registration.FSharp
-open CellScript.Client
+open CellScript.Client.Core
+open CellScript.Client.Desktop
 open CellScript.Core.Tests
 open NLog
 
+let logger = NLog.FSharp.Logger(LogManager.GetCurrentClassLogger())
+let client = Client.create<OuterMsg> 9050 logger
+let apiLambdas = Client.apiLambdas logger client
 
 let excelFunctions() =
-    Registration.excelFunctions<OuterMsg>()
+    Registration.excelFunctions apiLambdas
     |> FsAsyncRegistration.ProcessFsAsyncRegistrations
     |> AsyncRegistration.ProcessAsyncRegistrations
     |> ParamsRegistration.ProcessParamsRegistrations

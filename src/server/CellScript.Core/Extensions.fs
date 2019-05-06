@@ -73,3 +73,4 @@ module internal Extensions =
             let baseArray = Array2D.toSeqs values |> Seq.map Array.ofSeq
             let ws = p.Workbook.Worksheets.Add("Sheet1")
             ws.Cells.["A1"].LoadFromArrays(baseArray)
+

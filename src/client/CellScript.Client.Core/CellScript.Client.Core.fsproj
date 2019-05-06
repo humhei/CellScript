@@ -9,7 +9,11 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\CellScript.Core\CellScript.Core.fsproj" />
+    <PackageReference Include="Fake.Core.Process" Version="5.13.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\server\CellScript.Core\CellScript.Core.fsproj" />
   </ItemGroup>
 
   <ItemGroup>

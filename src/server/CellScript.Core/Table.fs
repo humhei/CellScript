@@ -18,12 +18,6 @@ with
         let frame = ExcelFrame.ofArray2DWithHeader array2D
         Table frame
 
-    static member TempData =
-        let param =
-            array2D [[box "US";box "UK";box "EUR"]; [6; 5; 36]; [7; 6; 37]]
-
-        Table.Convert param
-
     interface IToArray2D with 
         member x.ToArray2D() =
             ExcelFrame.toArray2DWithHeader x.AsExcelFrame

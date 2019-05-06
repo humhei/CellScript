@@ -10,6 +10,7 @@ open Microsoft.Extensions.DependencyInjection
 open Giraffe
 open NLog.Web
 open Akkling
+open Hyperion
 
 // ---------------------------------
 // Models
@@ -30,7 +31,7 @@ module Views =
     let layout (content: XmlNode list) =
         html [] [
             head [] [
-                title []  [ encodedText "CellScript.Server.Fcs" ]
+                title []  [ encodedText "CellScript.Server.Tests" ]
                 link [ _rel  "stylesheet"
                        _type "text/css"
                        _href "/main.css" ]
@@ -39,7 +40,7 @@ module Views =
         ]
 
     let partial () =
-        h1 [] [ encodedText "CellScript.Server.Fcs" ]
+        h1 [] [ encodedText "CellScript.Server.Tests" ]
 
     let index (model : Message) =
         [

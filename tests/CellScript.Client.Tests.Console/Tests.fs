@@ -1,7 +1,7 @@
 ﻿module Tests
 open CellScript.Core.Tests
 open Akkling
-open CellScript.Core.Remote
+open CellScript.Core.Cluster
 open Expecto
 open CellScript.Core.Types
 open System.IO
@@ -10,6 +10,7 @@ open Fake.IO.FileSystemOperators
 open NLog
 open CellScript.Client.Core
 open CellScript.Client.Desktop
+open System.Threading
 
 
 
@@ -26,13 +27,15 @@ let equalByResponse expected response =
 let logger = NLog.FSharp.Logger(LogManager.GetCurrentClassLogger())
 
 let createClient<'Msg>() =
-    Client.create<'Msg>()
+    NetCoreClient.create<'Msg> 9050
 
 
 let udfTests =
     let test (expected: obj[,]) (msg: 'Msg) =
         let client = createClient<'Msg>()
         let actor = client.RemoteServer
+        Thread.Sleep(2000)
+
         let response: obj[,] =
             actor <? msg
             |> Async.RunSynchronously
@@ -46,20 +49,12 @@ let udfTests =
         test (array2D [[box expected]]) msg
 
     testList "udf tests" [
-        testCase "get excel functions" (fun _ ->
+        ftestCase "get excel functions" (fun _ ->
             /// ensure no exceptions
             let client = createClient<OuterMsg>()
-            let apiLambdas = Client.apiLambdas logger client
+            let apiLambdas = NetCoreClient.apiLambdas client
             let excelFunctions = Registration.excelFunctions apiLambdas
             Expect.hasLength excelFunctions 6 "pass"
-        )
-
-        testCase "get fcs functions" (fun _ ->
-            /// ensure no exceptions
-            let client = createClient<FcsMsg>()
-            let apiLambdas = Client.apiLambdas logger client
-            let excelFunctions = Registration.excelFunctions apiLambdas
-            Expect.hasLength excelFunctions 1 "pass"
         )
 
         testCase "string" (fun _ ->
@@ -70,10 +65,11 @@ let udfTests =
 
 let commandTests =
     testList "command tests" [
+
         testCase "get command" (fun _ ->
             /// ensure no exceptions
             let client = createClient<FcsMsg>()
-            let apiLambdas = Client.apiLambdas logger client
+            let apiLambdas = NetCoreClient.apiLambdas client
             let excelCommands = Registration.excelCommands apiLambdas
 
             Expect.hasLength excelCommands 1 "pass"
@@ -81,7 +77,7 @@ let commandTests =
 
         )
 
-        ftestCase "invoke edit command" (fun _ ->
+        testCase "invoke edit command" (fun _ ->
 
             let client = createClient<FcsMsg>()
             let actor = client.RemoteServer
@@ -99,6 +95,7 @@ let commandTests =
         )
 
     ]
+
 
 
 
@@ -129,7 +126,15 @@ let evalTests =
         test buildExpected inputIndexer codeIndexer
 
     testList "eval tests" [
-    
+
+        testCase "get fcs functions" (fun _ ->
+            /// ensure no exceptions
+            let client = createClient<FcsMsg>()
+            let apiLambdas = NetCoreClient.apiLambdas client
+            let excelFunctions = Registration.excelFunctions apiLambdas
+            Expect.hasLength excelFunctions 1 "pass"
+        )
+
         testCase "string test" (fun _ ->
             testSingleton (fun a -> string a + "8") "B2" "B3"
         )

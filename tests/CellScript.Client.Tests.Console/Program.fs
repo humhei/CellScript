@@ -1,14 +1,15 @@
 ﻿// Learn more about F# at http://fsharp.org
 
-open System
 open CellScript.Core
-open CellScript.Core.Tests
-open Akkling
-open CellScript.Client
-open CellScript.Core.Remote
 open Expecto.Logging
 open Expecto
-open Akkling.Persistence
+open Akka.Configuration
+open Akka.Cluster
+open Akkling
+open Akka.Cluster.Tools.Singleton
+open Akkling.Cluster.ClusterExtensions
+open System
+
 
 let testConfig =  
     { Expecto.Tests.defaultConfig with 
@@ -23,24 +24,6 @@ let tests =
     ] 
 
 
-let system = System.create "persisting-sys" <| Configuration.defaultConfig()
-
-type CounterChanged =
-    { Delta : int }
-
-type CounterCommand =
-    | Inc
-    | Dec
-    | GetState
-
-type CounterMessage =
-    | Command of CounterCommand
-    | Event of CounterChanged
-
-
-
-
 [<EntryPoint>]
 let main argv =
-
     runTests testConfig tests

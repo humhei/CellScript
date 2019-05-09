@@ -9,7 +9,8 @@
     <Compile Include="ExcelArray.fs" />
     <Compile Include="Table.fs" />
     <Compile Include="ExcelVector.fs" />
-    <Compile Include="Remote.fs" />
+    <Compile Include="AkkaExtensions.fs" />
+    <Compile Include="Cluster.fs" />
   </ItemGroup>
   <ItemGroup>
     <!--<PackageReference Include="Akka" Version="1.4.1" />-->

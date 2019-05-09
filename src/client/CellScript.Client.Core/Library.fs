@@ -11,8 +11,9 @@ open System
 open System.Collections.Concurrent
 open Akka.Actor
 open CellScript.Core
-open CellScript.Core.Remote
+open CellScript.Core.Cluster
 open CellScript.Core.Types
+open Akka.Event
 
 [<RequireQualifiedAccess>]
 type ApiLambda =
@@ -30,22 +31,23 @@ module ApiLambda =
         | _ -> None
 
 [<RequireQualifiedAccess>]
-type ClientMsg<'CustomClientDesktopMsg> =
-    | CustomMsg of 'CustomClientDesktopMsg
+type EndPointClientMsg =
     | UpdateCellValues of xlRefs: SerializableExcelReference list
 
-type Client<'Msg> = 
-    { Value: Remote.Client<'Msg> 
+type NetCoreClient<'Msg> = 
+    { Value: Client<'Msg> 
       GetCaller: unit -> CommandCaller }
 with 
 
     member x.RemoteServer = 
         x.Value.RemoteServer
 
+    member x.Logger = x.Value.Logger
+
     /// internal helper function
-    member internal x.Call (logger: NLog.FSharp.Logger, message): Async<obj[,]> = 
+    member internal x.InvokeFunction (message): Async<obj[,]> = 
         async {     
-            let! (result: obj[,]) = x.RemoteServer <? message
+            let! (result: obj[,]) = x.RemoteServer <? (message)
 
             let flat2Darray array2D = 
                 [| for x in [0..(Array2D.length1 array2D) - 1] do 
@@ -55,21 +57,23 @@ with
                 result 
                 |> flat2Darray
 
-            logger.Info "CellScript Client get respose %A" resultPrintable 
+            x.Logger.Info(sprintf "CellScript Client get respose %A" resultPrintable)
             return result
 
         } 
-    member internal x.Action (logger: NLog.FSharp.Logger, message) = 
+
+    member internal x.InvokeCommand (message) = 
         async {
             match! x.RemoteServer <? message with
-            | Result.Ok () -> logger.Info "Invoke command %A succesfully" message
-            | Result.Error error -> logger.Error "Erros when invoke command %A: %s" message error
+            | Result.Ok () -> x.Logger.Info (sprintf "Invoke command %A succesfully" message)
+            | Result.Error error -> x.Logger.Error (sprintf "Erros when invoke command %A: %s" message error)
         } |> Async.Start
 
         0
 
+
 [<RequireQualifiedAccess>]
-module Client =   
+module NetCoreClient =   
 
 
     [<AutoOpen>]
@@ -253,10 +257,10 @@ module Client =
 
         let private nullValue = Expr.Value(null, typeof<unit>)
 
-        let ofUci logger (client: Client<'Msg>) (uci: UnionCaseInfo) =
+        let ofUci (client: NetCoreClient<'Msg>) (uci: UnionCaseInfo) =
             let clientValue = Expr.Value client
-            let callMethodInfo = typeof<Client<'Msg>>.GetMethod("Call",BindingFlags.Instance ||| BindingFlags.NonPublic)
-            let actionMethodInfo = typeof<Client<'Msg>>.GetMethod("Action",BindingFlags.Instance ||| BindingFlags.NonPublic)
+            let callMethodInfo = typeof<NetCoreClient<'Msg>>.GetMethod("InvokeFunction",BindingFlags.Instance ||| BindingFlags.NonPublic)
+            let actionMethodInfo = typeof<NetCoreClient<'Msg>>.GetMethod("InvokeCommand",BindingFlags.Instance ||| BindingFlags.NonPublic)
 
             let commandCallerApp =
                 let commandCaller = <@ fun () -> client.GetCaller() @>
@@ -283,7 +287,7 @@ module Client =
                                 (arguments, uciAccum) ||> List.fold (fun arguments uci ->
                                     [Expr.NewUnionCase (uci, arguments)]
                                 )
-                            Expr.Value logger :: msg
+                            msg
 
                         Expr.Call(clientValue
                         , methodInfo, args)
@@ -332,18 +336,18 @@ module Client =
 
             loop [uci] uci
 
-    let apiLambdas (logger) (client: Client<'Msg>) =
+    let apiLambdas (client: NetCoreClient<'Msg>) =
         let tp = typeof<'Msg>
         if FSharpType.IsUnion tp then
             FSharpType.GetUnionCases tp
-            |> Array.collect (ApiLambda.ofUci logger client)
+            |> Array.collect (ApiLambda.ofUci client)
         else failwithf "type %s is not an union type" tp.FullName
 
-    let create (logger: NLog.FSharp.Logger) getCaller processCustomMsg = 
+    let create seedPort getCaller processCustomMsg = 
         let client = 
-            Remote.Client.create remotePort (fun msg ->
+            Client.create seedPort (fun logger msg ->
                 match msg with 
-                | Remote.ClientMsg.Exec (toolName, args, workingDir) ->
+                | ClientMsg.Exec (toolName, args, workingDir) ->
                     let tool = 
                         match ProcessUtils.tryFindFileOnPath toolName with 
                         | Some tool -> tool
@@ -354,7 +358,7 @@ module Client =
 
                     let exec tool args dir =
                         let argLine = Args.toWindowsCommandLine args
-                        logger.Info "%s %s" tool argLine
+                        logger.Info (sprintf "%s %s" tool argLine)
                         let result =
                             args
                             |> CreateProcess.fromRawCommand tool
@@ -365,13 +369,36 @@ module Client =
                         then failwithf "Error while running %s with args %A" tool (List.ofSeq args)
 
                     exec tool args workingDir
-                    ignored()
+                    Ignore
 
-                | Remote.ClientMsg.CustomMsg msg ->
-                    processCustomMsg (ClientMsg.CustomMsg msg)
-                | Remote.ClientMsg.UpdateCellValues xlRefs ->
-                    processCustomMsg (ClientMsg.UpdateCellValues xlRefs)
-
+                | ClientMsg.UpdateCellValues xlRefs ->
+                    processCustomMsg logger (EndPointClientMsg.UpdateCellValues xlRefs)
             )
+
+        let client =
+            { client with 
+                RemoteServer = 
+                    let remoteServer = client.RemoteServer
+
+                    { new ICanTell<_> with
+                        member this.Ask(arg1, ?arg2: TimeSpan) = async {
+                            let! (result: Result<obj , string>) = remoteServer.Ask(arg1, arg2)
+                            match result with 
+                            | Result.Ok response -> 
+                                return unbox response
+                            | Result.Error errorMsg ->
+                                let errorMsg = array2D [[box errorMsg]]
+                                return unbox errorMsg
+                        }
+
+                        member this.Tell(arg1, arg2): unit = 
+                            remoteServer <! (arg1)
+
+                        member this.Underlying = 
+                            remoteServer.Underlying }  
+
+
+            }
+
         { Value = client 
           GetCaller = getCaller }

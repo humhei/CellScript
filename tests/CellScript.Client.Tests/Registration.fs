@@ -8,9 +8,8 @@ open CellScript.Core.Tests
 open NLog
 
 let logger = NLog.FSharp.Logger(LogManager.GetCurrentClassLogger())
-let client = Client.create<OuterMsg> 9050 logger
-let apiLambdas = Client.apiLambdas logger client
-
+let client = NetCoreClient.create<OuterMsg> 9050 
+let apiLambdas = NetCoreClient.apiLambdas client
 let excelFunctions() =
     Registration.excelFunctions apiLambdas
     |> FsAsyncRegistration.ProcessFsAsyncRegistrations

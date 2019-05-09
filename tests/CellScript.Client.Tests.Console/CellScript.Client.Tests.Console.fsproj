@@ -17,6 +17,7 @@
   <ItemGroup>
     <PackageReference Include="Expecto" Version="8.10.1" />
     <PackageReference Include="Fake.IO.FileSystem" Version="5.12.6" />
+    <PackageReference Include="NLog.Config" Version="4.6.3" />
   </ItemGroup>
 
   <ItemGroup>

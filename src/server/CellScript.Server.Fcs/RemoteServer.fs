@@ -34,7 +34,7 @@ akka.persistence.snapshot-store.plugin = "akka.persistence.snapshot-store.litedb
 akka.persistence.snapshot-store.litedb.fsharp {
     class = "Akka.Persistence.LiteDB.FSharp.LiteDBSnapshotStore, Akka.Persistence.LiteDB.FSharp"
     plugin-dispatcher = "akka.actor.default-dispatcher"
-    connectString = "hello.db"
+    connection-string = "hello.db"
 }
         """
 

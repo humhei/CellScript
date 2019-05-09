@@ -4,7 +4,7 @@ open CellScript.Core
 open ExcelDna.Integration
 open System.IO
 open CellScript.Core.Types
-open CellScript.Core.Remote
+open CellScript.Core.Cluster
 open Microsoft.Office.Interop.Excel
 open Akkling
 open CellScript.Client.Core
@@ -63,8 +63,8 @@ module private SerializableExcelReference =
           SheetName = sheetName }
 
 [<RequireQualifiedAccess>]
-module Client =
-    let create<'Msg>(logger: NLog.FSharp.Logger)  = 
+module NetCoreClient =
+    let create<'Msg> seedPort  = 
 
         let getCaller() =
             let app = ExcelDnaUtil.Application :?> Application
@@ -78,10 +78,10 @@ module Client =
             SerializableExcelReference.ofRange activeWorkbookPath activeSheetName selection
             |> CommandCaller
 
-        let client: Client<'Msg> = 
-            Client.create getCaller (fun msg ->
+        let client: NetCoreClient<'Msg> = 
+            NetCoreClient.create seedPort getCaller (fun logger msg ->
                 match msg with 
-                | ClientMsg.UpdateCellValues xlRefs ->
+                | EndPointClientMsg.UpdateCellValues xlRefs ->
                     try 
                         let app = ExcelDnaUtil.Application :?> Application
 
@@ -100,20 +100,18 @@ module Client =
 
                             else failwithf "except: %s_%s; actual: %s_%s" xlRef.WorkbookPath xlRef.SheetName activeWorkbookPath activeSheetName
                         )
-                        ignored()
+                        Ignore
 
                     with ex ->
-                        logger.Error "%A" ex
-                        ignored()
+                        logger.Error (sprintf "%A" ex)
+                        Ignore
 
-                | _ -> ignored()
             )
 
         client
 
 [<RequireQualifiedAccess>]
 module Registration =
-
 
     let private toSerialbleExcelReference (xlRef: ExcelReference): SerializableExcelReference =
         SerializableExcelReference.ofExcelReference xlRef

@@ -17,6 +17,7 @@
     <PackageReference Include="NLog.Config" Version="4.6.2" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\server\CellScript.Core.Fcs\CellScript.Core.Fcs.fsproj" />
     <ProjectReference Include="..\CellScript.Client.Desktop\CellScript.Client.Desktop.fsproj" />
   </ItemGroup>
   <ItemGroup>

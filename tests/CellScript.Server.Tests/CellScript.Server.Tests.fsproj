@@ -35,7 +35,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\server\CellScript.Server.Core\CellScript.Server.Core.fsproj" />
     <ProjectReference Include="..\CellScript.Core.Tests\CellScript.Core.Tests.fsproj" />
   </ItemGroup>
 

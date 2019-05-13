@@ -1,53 +1,38 @@
 ﻿namespace CellScript.Core
 open Akkling
-open Types
 open System
 open Microsoft.FSharp.Quotations.Patterns
 open Akka.Remote
 open Akka.Event
 open Akka.Cluster.Tools.Singleton
 open Akka.Cluster
+open CellScript.Core.Types
+open Akkling.Cluster.ServerSideDevelopment
+open Akkling.Cluster.ServerSideDevelopment.Client
 
 module Cluster = 
-    open AkkaExtensions
-
-    [<AutoOpen>]
-    module Types =
-        type Command =
-            { Shortcut: string option }
-
-        type CellScriptEvent<'EventArg> = CellScriptEvent of 'EventArg
-
-        type SheetActiveArg =
-            { WorkbookPath: string 
-              WorksheetName: string }
 
 
-        [<RequireQualifiedAccess>]
-        type FcsMsg =
-            | EditCode of CommandCaller
-            | Eval of input: SerializableExcelReference * code: string
-            | Sheet_Active of CellScriptEvent<SheetActiveArg>
-            | Workbook_BeforeClose of CellScriptEvent<string>
-
-
-    let private withAppconfigOrWebconfig baseConfig =
-        Configuration.load().WithFallback baseConfig
 
     let [<Literal>] private SERVER = "server"
     let [<Literal>] private CELL_SCRIPT_CLUSETER = "cellScriptCluster"
-    //let [<Literal>] private CELL_SCRIPT_CLUSETER_NODE = "cellScriptClusterClient"
+
 
     [<RequireQualifiedAccess>]
-    module private Hopac =
-        let listText (lists: string list) =
-            lists
-            |> List.map (sprintf "\"%s\"")
-            |> String.concat ","
+    module Config = 
 
-    module ClusterOperators =
+        [<RequireQualifiedAccess>]
+        module private Hopac =
+            let listText (lists: string list) =
+                lists
+                |> List.map (sprintf "\"%s\"")
+                |> String.concat ","
 
-        let clusterConfig (roles: string list) remotePort seedPort = 
+
+        let internal withAppconfigOrWebconfig baseConfig =
+            Configuration.load().WithFallback baseConfig
+
+        let createClusterConfig (roles: string list) remotePort seedPort = 
             /// ["crawler", "logger"]
 
             let config = 
@@ -89,102 +74,44 @@ module Cluster =
             |> withAppconfigOrWebconfig
 
 
-        let createSystem roles remotePort seedPort = System.create CELL_SCRIPT_CLUSETER <| clusterConfig roles remotePort seedPort
+    let private createClusterSystem roles remotePort seedPort = 
+        System.create CELL_SCRIPT_CLUSETER <| Config.createClusterConfig roles remotePort seedPort
 
+    let [<Literal>] private CLIENT = "client"
 
-    open ClusterOperators
+    [<RequireQualifiedAccess>]
+    type ClientCallbackMsg =
+        | UpdateCellValues of xlRefs: SerializableExcelReference list
+        | Exec of toolName: string * args: string list * workingDir: string
 
-    [<AutoOpen>]
+    type Client<'ServerMsg> =
+        { RemoteServer: ICanTell<'ServerMsg>
+          Logger: ILoggingAdapter }
+
+    [<RequireQualifiedAccess>]
     module Client =
 
-        let rec asCommandUci expr =
-            match expr with 
-            | Lambda(_, expr) ->
-                asCommandUci expr
+        let createAgent seedPort (handleClientCallback: ILoggingAdapter -> ClientCallbackMsg -> ActorEffect<ClientCallbackMsg>): Client<'ServerMsg> =
+            let system = createClusterSystem [CLIENT] 0 seedPort
 
-            | NewUnionCase (uci, exprs) ->
-                if exprs.Length <> 1 then failwithf "command %A msg's paramters length should be equal to 1" uci
-                else uci
-            | _ -> failwithf "command expr %A should be a union case type" expr
+            let log = system.Log
 
-        let commandMapping =
-            lazy 
-                [ asCommandUci <@ FcsMsg.EditCode @>, { Shortcut = Some "+^{F11}" }]
-                |> dict
+            let callbackActor = spawnAnonymous system (props (actorOf(handleClientCallback log)))
 
+            let remoteServer: ICanTell<'ServerMsg> = 
 
-        [<RequireQualifiedAccess>]
-        type ServerMsg<'ServerCustomMsg> =
-            | CustomMsg of 'ServerCustomMsg
+                ClientAgent.create system CLIENT SERVER (Some callbackActor)
 
-        [<RequireQualifiedAccess>]
-        type ClientMsg =
-            | UpdateCellValues of xlRefs: SerializableExcelReference list
-            | Exec of toolName: string * args: string list * workingDir: string
+            { RemoteServer = remoteServer
+              Logger = log }
 
-
-        type Client<'ServerCustomMsg> =
-            { RemoteServer: ICanTell<'ServerCustomMsg>
-              Logger: ILoggingAdapter }
-
-        let [<Literal>] CLIENT = "client"
-
-        [<RequireQualifiedAccess>]
-        module Client =
-
-            let create seedPort (handleClientMsg: ILoggingAdapter -> ClientMsg -> ActorEffect<ClientMsg>): Client<'ServerCustomMsg> =
-                
-                let system = createSystem [CLIENT] 0 seedPort
-
-                let log = system.Log
-
-                let callbackActor = spawnAnonymous system (props (actorOf(handleClientMsg log)))
-
-                let remoteServer: ICanTell<'ServerCustomMsg> = 
-
-                    ClusterClient.create system CLIENT SERVER (Some callbackActor)
-                    |> retypeToDUChild ServerMsg.CustomMsg
-
-                { RemoteServer = remoteServer
-                  Logger = log }
-
-    [<AutoOpen>]
+    [<RequireQualifiedAccess>]
     module Server =
 
-
-        type ServerModel<'CustomModel> =
-            { CustomModel: 'CustomModel }
-
-        type ContantClientMsg =
-            | AddServer
-
-        [<RequireQualifiedAccess>]
-        module Server =
-
-            type HandleMsg<'ServerCustomMsg, 'ServerCustomModel> = 
-                Actor<ServerMsg<'ServerCustomMsg>> 
-                    -> 'ServerCustomMsg 
-                    -> 'ServerCustomModel
-                    -> 'ServerCustomModel
-
-            let createAgent seedport initialCustomModel (handleMsg: HandleMsg<'ServerCustomMsg, 'ServerCustomModel>) =
-                
-                let system = createSystem [SERVER] seedport seedport
-                let server = spawn system SERVER (props (fun ctx ->
-                    let rec loop model = actor {
-                        let! msg = ctx.Receive()
-                        match msg with 
-                        | ServerMsg.CustomMsg customMsg ->
-                            let newCustomModel = handleMsg ctx customMsg model.CustomModel
-                            return! loop { model with CustomModel = newCustomModel }
-                    }
-
-                    loop { CustomModel = initialCustomModel }
-                ))
-
-                ClusterServerStatusListener.listenServer server system CLIENT
-
-                ()
+        let createAgent seedport initialCustomModel (handleMsg) =
+            let system = createClusterSystem [SERVER] seedport seedport
+            Server.createAgent (fun (c: ClientCallbackMsg) -> ()) system SERVER CLIENT initialCustomModel handleMsg
+            system
             
 
 

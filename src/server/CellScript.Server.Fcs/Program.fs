@@ -15,6 +15,7 @@ open System.Reflection
 open Hyperion
 open Fake.Core
 open Newtonsoft.Json
+open CellScript.Server.Fcs
 
 // ---------------------------------
 // Models

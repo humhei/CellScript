@@ -14,9 +14,12 @@ open Akkling.Persistence
 open Akka.Persistence.LiteDB.FSharp
 open OfficeOpenXml
 open Fake.IO.FileSystemOperators
+open CellScript.Core
+open LiteDB
+open LiteDB.FSharp
+open LiteDB.FSharp.Extensions
 
 #nowarn "0044"
-
 
 type SerializableExcelReferenceWithoutContent = 
     { ColumnFirst: int
@@ -53,7 +56,7 @@ module SerializableExcelReferenceWithoutContent =
     let getFsxPath (scriptsDir: string) (xlRef: SerializableExcelReferenceWithoutContent) =
         let addr = cellAddress xlRef
 
-        let validNamingPath = xlRef.WorkbookPath.Replace('/','_').Replace('\\','_').Replace(':','_')
+        let validNamingPath = xlRef.WorkbookPath.Replace('/','-').Replace('\\','-').Replace(':','-').Replace('.','_')
 
         let fileName = 
             [validNamingPath; xlRef.SheetName; addr.Address]
@@ -93,6 +96,79 @@ type CompilerMsg =
 
 [<RequireQualifiedAccess>]
 module Compiler =
+
+
+    type CompileHistory =
+        { Code: string
+          /// dll, error
+          CompileResult: Result<string, string>}
+
+    [<CLIMutable>]
+    type XlRefCache =
+        { Id: int
+          XlRef: SerializableExcelReferenceWithoutContent
+          CompileHistorys: CompileHistory list }
+
+    [<RequireQualifiedAccess>]
+    module private XlRefCache =
+        let private addOrUpdateHistory history (xlRefCache: XlRefCache) =
+            match List.tryFind (fun historyInCache -> historyInCache.Code = history.Code) xlRefCache.CompileHistorys with 
+            | Some _ ->
+                let leftHistories = 
+                    List.filter (fun historyInCache -> 
+                        historyInCache.Code <> history.Code) xlRefCache.CompileHistorys
+                { xlRefCache with CompileHistorys = history :: leftHistories}
+
+            | None ->
+                let deepth = 10
+                let compileHistorys = xlRefCache.CompileHistorys
+                if compileHistorys.Length < deepth then 
+                    { xlRefCache with CompileHistorys = history :: compileHistorys }
+                else 
+                    { xlRefCache with 
+                        CompileHistorys = history :: List.take (compileHistorys.Length - 1) compileHistorys }       
+        
+
+        let private dbPath = "CellScript.Server.Fcs.db"
+        let private mapper = FSharpBsonMapper()
+
+        let private useCollection (f: LiteCollection<'T> -> 'result) = 
+            use db = new LiteDatabase(dbPath, mapper)
+            let collection = db.GetCollection<'T>()
+            f collection
+
+
+
+        let getOrAddOrUpdateInLiteDb xlRef code valueFactory = 
+            useCollection (fun col ->
+                match col.tryFindOne(fun cache -> cache.XlRef = xlRef) with 
+                | Some cache ->
+                    match List.tryFind (fun history -> history.Code = code) cache.CompileHistorys with 
+                    | Some history ->
+                        match history.CompileResult with 
+                        | Result.Ok dll when not (File.Exists dll) ->
+                            let history = valueFactory()
+                            let newCache = addOrUpdateHistory history cache
+                            col.Update(newCache) |> ignore
+                            newCache
+                        | _ ->
+                            cache
+                    | None -> 
+                        let compileHistory = valueFactory()
+                        let newCache = addOrUpdateHistory compileHistory cache
+                        col.Update(newCache) |> ignore
+                        newCache
+                | None ->
+                    let compileHistory = valueFactory()
+                    let cache = 
+                        { Id = 0 
+                          XlRef = xlRef 
+                          CompileHistorys = [compileHistory] }
+                    col.Insert(cache) |> ignore
+                    cache
+            )
+
+
     type private HostAssemblyLoadContext(pluginPath: string) =
         inherit AssemblyLoadContext(isCollectible = true)
         let resolver = new AssemblyDependencyResolver(pluginPath)
@@ -131,7 +207,11 @@ module Compiler =
         ||> Array.fold (fun sb b -> sb.Append(b.ToString("x2")))
         |> string
 
-    let private evalByResult xlRef dll =
+    let textToMD5 (text: string) =
+        Encoding.UTF8.GetBytes(text)
+        |> md5
+
+    let private evalByResult xlRef (script: string) dll =
         match dll with
         | Result.Ok dll ->
             useContext dll (fun assembly ->
@@ -139,9 +219,10 @@ module Compiler =
                 let boxedFunction, methodInfo = 
                     let boxedFunctionAndMethodInfo (assembly: Assembly) =
                         let userCodeModule =
+                            let moduleName = Path.GetFileNameWithoutExtension script
                             assembly.GetExportedTypes()
                             |> Array.find (fun tp ->
-                                let assemblyName = Path.GetFileNameWithoutExtension assembly.CodeBase
+                                let assemblyName = moduleName
                                 System.String.Compare(tp.Name, assemblyName, true) = 0
                             )
 
@@ -199,7 +280,7 @@ module Compiler =
                 let convertToReturn (value: obj) =
                     let iToArray2D = 
                         match value with 
-                        | :? string as value  ->
+                        | :? string as value ->
                             String value
                             :> IToArray2D
                         | :? float as value ->
@@ -211,77 +292,63 @@ module Compiler =
                         | :? IToArray2D as v ->
                             v
                         | _ -> failwithf "cannot convert %s to obj[,], please implement interface IToArray2D first" (value.GetType().FullName)
-                    iToArray2D.ToArray2D()
-
+                    iToArray2D
 
                 convertToReturn returnValue
             )
 
-        | Result.Error (errors: FSharpErrorInfo []) ->
-            let errorText =
-                errors
-                |> Array.map (fun error -> error.Message)
-                |> String.concat "\n"
+        | Result.Error (errorText: string) ->
     
-            array2D [[errorText]]
-
-
+            String errorText :> IToArray2D
 
     let createAgent system: IActorRef<CompilerMsg> = 
-        spawn system "cellScriptServerFcsCompiler" (propsPersist (fun ctx ->
-            let rec loop (state: Map<string, Result<string,FSharpErrorInfo []>>) = actor {
-                let! msg = ctx.Receive() : IO<obj>
+        spawnAnonymous system (propsPersist (fun ctx ->
+            let rec loop (state: Map<SerializableExcelReferenceWithoutContent, XlRefCache>) = actor {
+                let! msg = ctx.Receive() 
                 match msg with
-                | SnapshotOffer snap ->
-                    return! loop snap
+                | CompilerMsg.Eval (scriptsDir, xlRef, code) ->
 
-                | :? CompilerMsg as fcsMsg -> 
-                    match fcsMsg with 
-                    | CompilerMsg.Eval (scriptsDir, xlRef, code) ->
-                        let md5 = (md5 (Encoding.UTF8.GetBytes code))
-                        let dll = 
-                            let tmpFsx = Path.ChangeExtension(md5, ".dll")
-                            Path.Combine(scriptsDir, tmpFsx)
-
-
-                        match state.TryFind md5, File.Exists dll with 
-                        | Some result, true -> 
-                            ctx.Sender() <! (evalByResult xlRef result)
+                    let xlRefPos = SerializableExcelReferenceWithoutContent.ofSerializableExcelReference xlRef
+                    let script = SerializableExcelReferenceWithoutContent.getFsxPath scriptsDir xlRefPos
                     
-                            return! loop state
-                        | _ ->
-                            let script = 
-                                let xlRef = SerializableExcelReferenceWithoutContent.ofSerializableExcelReference xlRef
-                                SerializableExcelReferenceWithoutContent.getFsxPath scriptsDir xlRef
+                    let dll = 
+                        let md5 = md5 (Encoding.UTF8.GetBytes (script + code))
+                        scriptsDir </> md5 + ".dll"
 
-                            File.WriteAllText(script,code,Text.Encoding.UTF8)
-                            let result = 
+                    let compileToNewByState state =
+                        let cache = 
+                            XlRefCache.getOrAddOrUpdateInLiteDb xlRefPos code (fun () ->
+                                File.WriteAllText(script, code, Text.Encoding.UTF8)
+                                let result = 
+                                    let errors, exitCode = 
+                                        let compilerArgWithDebuggerInfo dll script =
+                                            [| "fsc.exe"; "-o"; dll; "-a"; script;"--optimize-";"--debug"; |]
 
-                                let errors, exitCode = 
-                                    let compilerArgvWithDebuggerInfo dll script =
-                                        [| "fsc.exe"; "-o"; dll; "-a"; script;"--optimize-";"--debug"; |]
-
-                                    checker.Value.Compile(compilerArgvWithDebuggerInfo dll script) |> Async.RunSynchronously
+                                        checker.Value.Compile(compilerArgWithDebuggerInfo dll script) |> Async.RunSynchronously
                                 
-                                if exitCode <> 0 then
-                                    printfn "ERROS: %A" errors
-                                    Result.Error errors
-                                else
-                                    Result.Ok dll 
+                                    if exitCode <> 0 then
+                                        let errors = sprintf "ERROS: %A" errors
+                                        Result.Error errors
+                                    else
+                                        Result.Ok dll 
+                                { Code = code
+                                  CompileResult = result }
 
-                            let newState = Map.add md5 result state
+                            )
 
-                            saveSnapshot newState ctx
+                        let newState = Map.add xlRefPos cache state
 
-                            ctx.Sender() <! (evalByResult xlRef result)
+                        let history =
+                            cache.CompileHistorys |> List.find (fun history -> history.Code = code)
 
+                        ctx.Sender() <! (evalByResult xlRef script history.CompileResult)
 
-                            return! loop newState
+                        newState
 
-                | _ -> return Unhandled
+                    return! loop (compileToNewByState state)
+
             }
             loop Map.empty
         ))
-        |> retype
 
 

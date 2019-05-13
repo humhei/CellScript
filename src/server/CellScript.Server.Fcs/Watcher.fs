@@ -1,15 +1,17 @@
 ﻿module CellScript.Server.Fcs.Watcher
 open Akkling
-open CellScript.Core.Remote
+open System
+open CellScript.Core.Cluster
 open CellScript.Core.Types
 open Fake.IO
 open System.IO
 open System.Threading
 open System.Timers
-open System
 open Fake.IO.Globbing
 open System.Text
-
+open CellScript.Core
+open Akkling.Cluster.ServerSideDevelopment
+open Akka.Actor
 
 
 [<RequireQualifiedAccess>]
@@ -123,90 +125,96 @@ module private ChangeWatcher =
 
 
 [<RequireQualifiedAccess>]
-type CellScriptWatcherMsg<'ClientCustomMsg> = 
+type CellScriptWatcherMsg = 
     | EditCode of SerializableExcelReference
     | Sheet_Active of SheetActiveArg
     | DetectSourceFileChanges of FileChange seq
-    | UpdateClients of IActorRef<ClientMsg<'ClientCustomMsg>> list
     | UpdateActiveCells of Map<SerializableExcelReferenceWithoutContent, string>
 
 
-type CellScriptWatcherModel<'ClientCustomMsg> =
+
+type CellScriptWatcherModel =
     { ChangeWatcher: IDisposable option 
-      Clients: IActorRef<ClientMsg<'ClientCustomMsg>> list
-      ActivedCells: Map<SerializableExcelReferenceWithoutContent, string> }
+      ActivedCells: Map<SerializableExcelReferenceWithoutContent, string>
+      Clients: Map<Address, ClusterActor<ClientCallbackMsg>> }
 
 
-let createCellScriptWatcher scriptsDir (logger: NLog.FSharp.Logger) system = spawn system "cellScriptServerFcsWatcher" (props(fun ctx ->
+let createCellScriptWatcher scriptsDir (logger: NLog.FSharp.Logger) system : IActorRef<CellScriptWatcherMsg> = 
+    spawnAnonymous system (props(fun ctx ->
 
-    let tryDisposeChangeWatcher model =
-        match model.ChangeWatcher with 
-        | Some changeWatcher -> changeWatcher.Dispose()
-        | None -> ()
+        let tryDisposeChangeWatcher model =
+            match model.ChangeWatcher with 
+            | Some changeWatcher -> changeWatcher.Dispose()
+            | None -> ()
     
-        { model with ChangeWatcher = None }
+            { model with ChangeWatcher = None }
         
 
 
-    let rec loop model  = actor {
-        let updateWatcher (workbookPath, sheetName) =
-            let newModel = tryDisposeChangeWatcher model
-            let files = 
-                model.ActivedCells
-                |> Map.filter(fun xlRef _ ->
-                    xlRef.WorkbookPath = workbookPath 
-                    && xlRef.SheetName = sheetName
-                )
-                |> Seq.map (fun pair -> pair.Value)
+        let rec loop model  = actor {
+            let updateWatcher (workbookPath, sheetName) =
+                let newModel = tryDisposeChangeWatcher model
+                let files = 
+                    model.ActivedCells
+                    |> Map.filter(fun xlRef _ ->
+                        xlRef.WorkbookPath = workbookPath 
+                        && xlRef.SheetName = sheetName
+                    )
+                    |> Seq.map (fun pair -> pair.Value)
 
+                let pattern = 
+                    { BaseDirectory = scriptsDir
+                      Includes = List.ofSeq files
+                      Excludes = [] }
 
-            let pattern = 
-                { BaseDirectory = scriptsDir
-                  Includes = List.ofSeq files
-                  Excludes = [] }
+                let newChangeWatcher = 
+                    ChangeWatcher.run 
+                        (fun fileChanges -> ctx.Self <! box (CellScriptWatcherMsg.DetectSourceFileChanges fileChanges))
+                        pattern
+                { newModel with ChangeWatcher = Some newChangeWatcher }
 
-            let newChangeWatcher = 
-                ChangeWatcher.run 
-                    (fun fileChanges -> ctx.Self <! CellScriptWatcherMsg.DetectSourceFileChanges fileChanges)
-                    pattern
-            { newModel with ChangeWatcher = Some newChangeWatcher }
+            let! msg = ctx.Receive() : IO<obj>
+            logger.Info "cellscript  watcher receive %A" msg
 
-        let! msg = ctx.Receive()
-        logger.Info "cellscript  watcher receive %A" msg
+            match msg with
+            | :? UpdateCallbackClientsEvent<ClientCallbackMsg> as updateClientEvent ->
+                let (UpdateCallbackClientsEvent clients) = updateClientEvent
+                return! loop { model with Clients = clients }
 
-        match msg with 
-        | CellScriptWatcherMsg.EditCode xlRef ->
-            return! loop (updateWatcher(xlRef.WorkbookPath, xlRef.SheetName))
+            | :? CellScriptWatcherMsg as cellScriptWatcherMsg ->
+                match cellScriptWatcherMsg with 
+                | CellScriptWatcherMsg.EditCode xlRef ->
+                    return! loop (updateWatcher(xlRef.WorkbookPath, xlRef.SheetName))
 
-        | CellScriptWatcherMsg.Sheet_Active arg ->
-            return! loop (updateWatcher(arg.WorkbookPath, arg.WorksheetName))
-        
-        | CellScriptWatcherMsg.UpdateClients clients ->
-            return! loop { model with Clients = clients }
+                | CellScriptWatcherMsg.Sheet_Active arg ->
+                    return! loop (updateWatcher(arg.WorkbookPath, arg.WorksheetName))
 
-        | CellScriptWatcherMsg.UpdateActiveCells cells ->
-            return! loop { model with ActivedCells = cells }
+                | CellScriptWatcherMsg.UpdateActiveCells cells ->
+                    return! loop { model with ActivedCells = cells }
 
-        | CellScriptWatcherMsg.DetectSourceFileChanges fileChanges ->
-            let xlRefs = 
-                fileChanges
-                |> List.ofSeq
-                |> List.map (fun fileChange ->
-                    let contents = File.readAsStringWithEncoding Encoding.UTF8 fileChange.FullPath
-                    let xlRef = 
-                        model.ActivedCells 
-                        |> Map.findKey(fun _ fsxFile -> fsxFile = fileChange.FullPath)
-                    SerializableExcelReferenceWithoutContent.toSerializableExcelReference (array2D [[contents]]) xlRef
-                )
+                | CellScriptWatcherMsg.DetectSourceFileChanges fileChanges ->
+                    let xlRefs = 
+                        fileChanges
+                        |> List.ofSeq
+                        |> List.map (fun fileChange ->
+                            let contents = File.readAsStringWithEncoding Encoding.UTF8 fileChange.FullPath
+                            let xlRef = 
+                                model.ActivedCells 
+                                |> Map.findKey(fun _ fsxFile -> fsxFile = fileChange.FullPath)
+                            SerializableExcelReferenceWithoutContent.toSerializableExcelReference (array2D [[contents]]) xlRef
+                        )
 
-            model.Clients
-            |> List.iter (fun client ->
-                client <! ClientMsg.UpdateCellValues xlRefs
-            )
+                    if model.Clients.Count <> 1 then 
+                        logger.Warn "sprintf callback clients's length %d is not euqal to 1" model.Clients.Count
 
-            return! loop model
+                    model.Clients
+                    |> Map.iter (fun add client ->
+                        client <! ClientCallbackMsg.UpdateCellValues xlRefs
+                    )
 
-    }
+                    return! loop model
+            | _ -> return Unhandled
+        }
 
-    loop { ChangeWatcher = None; Clients = []; ActivedCells = Map.empty }
-))
+        loop { ChangeWatcher = None; ActivedCells = Map.empty; Clients = Map.empty }
+    )) |> retype

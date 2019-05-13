@@ -14,11 +14,12 @@ open CellScript.Core
 open CellScript.Core.Cluster
 open CellScript.Core.Types
 open Akka.Event
+open System.Collections.Generic
 
 [<RequireQualifiedAccess>]
 type ApiLambda =
     | Function of LambdaExpression
-    | Command of (Command * LambdaExpression)
+    | Command of (CommandSetting option * LambdaExpression)
 
 [<RequireQualifiedAccess>]
 module ApiLambda =
@@ -45,27 +46,27 @@ with
     member x.Logger = x.Value.Logger
 
     /// internal helper function
-    member internal x.InvokeFunction (message): Async<obj[,]> = 
+    member x.InvokeFunction (message): Async<obj[,]> = 
         async {     
-            let! (result: obj[,]) = x.RemoteServer <? (message)
+            let! (result: Result<obj , string>) = x.RemoteServer <? (message)
+            let result: obj[,] = 
+                match result with 
+                | Result.Ok response -> 
+                    let itoArray2D: IToArray2D = unbox response
+                    itoArray2D.ToArray2D()
 
-            let flat2Darray array2D = 
-                [| for x in [0..(Array2D.length1 array2D) - 1] do 
-                                yield array2D.[x, *] |]
+                | Result.Error errorMsg ->
+                    let errorMsg = array2D [[box errorMsg]]
+                    unbox errorMsg
 
-            let resultPrintable = 
-                result 
-                |> flat2Darray
-
-            x.Logger.Info(sprintf "CellScript Client get respose %A" resultPrintable)
             return result
 
         } 
 
-    member internal x.InvokeCommand (message) = 
+    member x.InvokeCommand (message) = 
         async {
             match! x.RemoteServer <? message with
-            | Result.Ok () -> x.Logger.Info (sprintf "Invoke command %A succesfully" message)
+            | Result.Ok (_: obj) -> x.Logger.Info (sprintf "Invoke command %A succesfully" message)
             | Result.Error error -> x.Logger.Error (sprintf "Erros when invoke command %A: %s" message error)
         } |> Async.Start
 
@@ -239,7 +240,7 @@ module NetCoreClient =
                 | [| parameter |] ->
                     let paramType = parameter.ParameterType
                     if paramType = typeof<CommandCaller> then
-                        Command (method, commandMapping.Value.[uci], parameter)
+                        Command (method, parameter)
                     
                     elif paramType.IsGenericType && paramType.GetGenericTypeDefinition() = typedefof<CellScriptEvent<_>> then
                         Event
@@ -257,10 +258,10 @@ module NetCoreClient =
 
         let private nullValue = Expr.Value(null, typeof<unit>)
 
-        let ofUci (client: NetCoreClient<'Msg>) (uci: UnionCaseInfo) =
+        let ofUci (log: NLog.FSharp.Logger) (commandSettings: IDictionary<UnionCaseInfo, CommandSetting>) (client: NetCoreClient<'Msg>) (uci: UnionCaseInfo) =
             let clientValue = Expr.Value client
-            let callMethodInfo = typeof<NetCoreClient<'Msg>>.GetMethod("InvokeFunction",BindingFlags.Instance ||| BindingFlags.NonPublic)
-            let actionMethodInfo = typeof<NetCoreClient<'Msg>>.GetMethod("InvokeCommand",BindingFlags.Instance ||| BindingFlags.NonPublic)
+            let callMethodInfo = typeof<NetCoreClient<'Msg>>.GetMethod("InvokeFunction",BindingFlags.Instance ||| BindingFlags.Public)
+            let actionMethodInfo = typeof<NetCoreClient<'Msg>>.GetMethod("InvokeCommand",BindingFlags.Instance ||| BindingFlags.Public)
 
             let commandCallerApp =
                 let commandCaller = <@ fun () -> client.GetCaller() @>
@@ -321,7 +322,8 @@ module NetCoreClient =
 
                     [| ApiLambda.Function csharLambda |]
 
-                | Command (_, command, parameter) ->
+                | Command (_, parameter) ->
+
                     let lambda = createLambda actionMethodInfo [| parameter |]
                     let messageLambda = 
 
@@ -329,25 +331,56 @@ module NetCoreClient =
 
                     let csharpLambda = toCSharpLambda messageLambda
 
-                    [| ApiLambda.Command (command, csharpLambda) |]
+                    let commandSetting =
+                        match commandSettings.TryGetValue uci with 
+                        | true, commandSetting ->
+                            Some commandSetting
+                        | false, _ ->
+                            log.Warn "cannot find command setting for %s" uci.Name
+                            None
+
+                    [| ApiLambda.Command (commandSetting, csharpLambda) |]
 
                 | Event ->
                     [||]
 
             loop [uci] uci
 
-    let apiLambdas (client: NetCoreClient<'Msg>) =
+    let rec private asCommandUci expr =
+        match expr with 
+        | Lambda(_, expr) ->
+            asCommandUci expr
+
+        | NewUnionCase (uci, exprs) ->
+            if exprs.Length <> 1 then failwithf "command %A msg's paramters length should be equal to 1" uci
+            else uci
+        | _ -> failwithf "command expr %A should be a union case type" expr
+
+    let apiLambdas (log: NLog.FSharp.Logger) (client: NetCoreClient<'Msg>) =
         let tp = typeof<'Msg>
+        let commandSettings = 
+            match tp.GetMethod("CommandSettings",BindingFlags.Public ||| BindingFlags.Static) with 
+            | null -> 
+                log.Info "cannot find static member CommandSettings in %s" tp.FullName
+                []
+            | commandSettingsMethodInfo ->
+                unbox (commandSettingsMethodInfo.Invoke(null, [||]))
+        
+        let commandSettings =
+            commandSettings
+            |> List.map (fun (expr, command) -> asCommandUci expr, command)
+            |> dict
+
         if FSharpType.IsUnion tp then
             FSharpType.GetUnionCases tp
-            |> Array.collect (ApiLambda.ofUci client)
+            |> Array.collect (ApiLambda.ofUci log commandSettings client)
         else failwithf "type %s is not an union type" tp.FullName
 
     let create seedPort getCaller processCustomMsg = 
         let client = 
-            Client.create seedPort (fun logger msg ->
+            Client.createAgent seedPort (fun logger msg ->
                 match msg with 
-                | ClientMsg.Exec (toolName, args, workingDir) ->
+                | ClientCallbackMsg.Exec (toolName, args, workingDir) ->
                     let tool = 
                         match ProcessUtils.tryFindFileOnPath toolName with 
                         | Some tool -> tool
@@ -371,34 +404,9 @@ module NetCoreClient =
                     exec tool args workingDir
                     Ignore
 
-                | ClientMsg.UpdateCellValues xlRefs ->
+                | ClientCallbackMsg.UpdateCellValues xlRefs ->
                     processCustomMsg logger (EndPointClientMsg.UpdateCellValues xlRefs)
             )
-
-        let client =
-            { client with 
-                RemoteServer = 
-                    let remoteServer = client.RemoteServer
-
-                    { new ICanTell<_> with
-                        member this.Ask(arg1, ?arg2: TimeSpan) = async {
-                            let! (result: Result<obj , string>) = remoteServer.Ask(arg1, arg2)
-                            match result with 
-                            | Result.Ok response -> 
-                                return unbox response
-                            | Result.Error errorMsg ->
-                                let errorMsg = array2D [[box errorMsg]]
-                                return unbox errorMsg
-                        }
-
-                        member this.Tell(arg1, arg2): unit = 
-                            remoteServer <! (arg1)
-
-                        member this.Underlying = 
-                            remoteServer.Underlying }  
-
-
-            }
 
         { Value = client 
           GetCaller = getCaller }

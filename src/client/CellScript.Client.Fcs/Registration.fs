@@ -4,16 +4,18 @@ open ExcelDna.Registration
 open ExcelDna.Registration.FSharp
 open CellScript.Client.Core
 open NLog
-open CellScript.Core.Remote
+open CellScript.Core.Cluster
+open CellScript.Core.Types
 open System.Reflection
 open Microsoft.Office.Interop.Excel
 open Akkling
 open CellScript.Client.Desktop
+open CellScript.Core
 
 let logger = NLog.FSharp.Logger(LogManager.GetCurrentClassLogger())
 
-let client = Client.create<FcsMsg> 9049 logger
-let apiLambdas = Client.apiLambdas logger client
+let client = NetCoreClient.create<FcsMsg> 9060
+let apiLambdas = NetCoreClient.apiLambdas logger client
 
 let excelFunctions() =
     Registration.excelFunctions apiLambdas

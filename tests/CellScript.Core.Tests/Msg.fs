@@ -18,3 +18,4 @@ module Msg =
         | TestString of string
         | TestExcelVector of ExcelVector
         | TestString2Params of text1: string * text2: string
+        | TestCommand of CommandCaller

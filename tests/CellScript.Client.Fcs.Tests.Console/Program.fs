@@ -18,8 +18,8 @@ let testConfig =
 
 let tests = 
     testList "All tests" [ 
-        Tests.udfTests    
         Tests.commandTests
+        Tests.evalTests         
     ] 
 
 

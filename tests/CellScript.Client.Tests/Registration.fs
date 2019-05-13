@@ -9,7 +9,7 @@ open NLog
 
 let logger = NLog.FSharp.Logger(LogManager.GetCurrentClassLogger())
 let client = NetCoreClient.create<OuterMsg> 9050 
-let apiLambdas = NetCoreClient.apiLambdas client
+let apiLambdas = NetCoreClient.apiLambdas logger client
 let excelFunctions() =
     Registration.excelFunctions apiLambdas
     |> FsAsyncRegistration.ProcessFsAsyncRegistrations

@@ -9,12 +9,20 @@ open OfficeOpenXml
 
 module Types =
 
-    type IToArray2D =
-        abstract member ToArray2D: unit -> obj[,]
+    type CellScriptEvent<'EventArg> = CellScriptEvent of 'EventArg
+
+    type SheetActiveArg =
+        { WorkbookPath: string 
+          WorksheetName: string }
+
 
     [<AttributeUsage(AttributeTargets.Property)>]
     type SubMsgAttribute() =
         inherit Attribute()
+
+
+    type CommandSetting =
+        { Shortcut: string option }
 
     type SerializableExcelReference =
         { ColumnFirst: int
@@ -104,7 +112,6 @@ module Types =
         member x.AsFrame =
             let (ExcelFrame frame) = x
             frame
-
 
 
     [<RequireQualifiedAccess>]

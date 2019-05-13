@@ -143,11 +143,14 @@ module Registration =
     let excelCommands (apiLambdas: ApiLambda []) = 
         apiLambdas
         |> Array.choose ApiLambda.asCommand  
-        |> Array.map (fun (command, lambda) -> 
+        |> Array.map (fun (commandSetting, lambda) -> 
             let excelCommand = ExcelCommandRegistration lambda
             excelCommand.CommandAttribute.MenuText <- lambda.Name
-            match command.Shortcut with 
-            | Some shortcut -> excelCommand.CommandAttribute.ShortCut <- shortcut
+            match commandSetting with 
+            | Some comandSetting ->
+                match comandSetting.Shortcut with 
+                | Some shortcut -> excelCommand.CommandAttribute.ShortCut <- shortcut
+                | None -> ()
             | None -> ()
             
             excelCommand

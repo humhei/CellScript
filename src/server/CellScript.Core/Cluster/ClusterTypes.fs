@@ -17,20 +17,17 @@ module private Utils =
         | MemberUp m ->
             m.HasRole remoteRoleName
         | _ -> false
-
-
-
-//[<RequireQualifiedAccess>]
-//module TypedActorSelectionPersistent =
-//    let create system path =
-//        { Path = path 
-//          System = system }
         
+
+type ClusterActorPersistent =
+    { Address: Address 
+      Role: string }
+
+
 
 [<CustomComparison; CustomEquality>]
 type ClusterActor<'Msg> =
-    { Actor: TypedActorSelectionPersistent<'Msg>
-      Address: Address
+    { Address: Address
       System: ActorSystem
       Role: string }
 with 
@@ -43,10 +40,8 @@ with
 
     member x.RemotePath = sprintf "%O/user/%s" x.Address x.Role
 
-    member x.AsICanTell =
-        match x.Actor with 
-        | Choice1Of2 actor -> actor :> ICanTell<_>
-        | Choice2Of2 actor -> actor.Value :> ICanTell<_>
+    member x.AsICanTell = 
+        select x.System x.RemotePath :> ICanTell<'Msg>
 
     interface ICanTell<'Msg> with 
         member x.Ask(msg, ?timeSpan) = x.AsICanTell.Ask(msg, timeSpan)
@@ -66,32 +61,30 @@ with
 
 [<RequireQualifiedAccess>]
 module ClusterActor =
-    let ofIActorRef (actor: IActorRef<_>) = 
-        { Actor = Choice1Of2 actor
+    let ofIActorRef system role (actor: IActorRef<_>) = 
+        { System = system
+          Role = role
           Address = actor.Path.Address }
 
+    let ofPersistent system (clusterActorPersistent: ClusterActorPersistent) =
+        { System = system
+          Role = clusterActorPersistent.Role
+          Address = clusterActorPersistent.Address }
 
     let retype (clusterActor: ClusterActor<_>) =
 
         { Address =  clusterActor.Address
-          Actor = 
-            match clusterActor.Actor with
-            | Choice1Of2 actor -> 
-                retype actor
-                |> Choice1Of2
-            | Choice2Of2 actor ->
-                TypedActorSelectionPersistent.create actor.System actor.Path
-                |> Choice2Of2
-        }
+          System = clusterActor.System
+          Role = clusterActor.Role  }
 
 type UpdateCallbackClientsEvent<'ClientCallbackMsg> = 
     UpdateCallbackClientsEvent of Map<Address, ClusterActor<'ClientCallbackMsg>>
 
 
 [<RequireQualifiedAccess>]
-type EndpointMsg<'CallbackMsg,'ServerMsg> =
-    | AddServer of ClusterActor<'ServerMsg>
-    | AddServerFromEvent of ClusterActor<'ServerMsg>
+type EndpointMsg =
+    | AddServer of ClusterActorPersistent
+    | AddServerFromEvent of ClusterActorPersistent
     | RemoveServer of Address
-    | AddClient of ClusterActor<'CallbackMsg>
+    | AddClient of ClusterActorPersistent
     | GetEndpoints

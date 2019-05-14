@@ -28,7 +28,8 @@ type SerializableExcelReferenceWithoutContent =
       RowLast: int
       WorkbookPath: string
       SheetName: string }
-
+with 
+    member xlRef.CellAddress = ExcelAddress(xlRef.RowFirst, xlRef.ColumnFirst, xlRef.RowLast, xlRef.ColumnLast)
 
 [<RequireQualifiedAccess>]
 module SerializableExcelReferenceWithoutContent =
@@ -103,6 +104,13 @@ module Compiler =
           /// dll, error
           CompileResult: Result<string, string>}
 
+    [<RequireQualifiedAccess>]
+    module CompileHistory =
+        let internal tryDeleteDll history =
+            match history.CompileResult with 
+            | Result.Ok dll -> File.Delete dll
+            | _ -> ()
+
     [<CLIMutable>]
     type XlRefCache =
         { Id: int
@@ -113,7 +121,8 @@ module Compiler =
     module private XlRefCache =
         let private addOrUpdateHistory history (xlRefCache: XlRefCache) =
             match List.tryFind (fun historyInCache -> historyInCache.Code = history.Code) xlRefCache.CompileHistorys with 
-            | Some _ ->
+            | Some history ->
+                CompileHistory.tryDeleteDll history
                 let leftHistories = 
                     List.filter (fun historyInCache -> 
                         historyInCache.Code <> history.Code) xlRefCache.CompileHistorys
@@ -126,7 +135,10 @@ module Compiler =
                     { xlRefCache with CompileHistorys = history :: compileHistorys }
                 else 
                     { xlRefCache with 
-                        CompileHistorys = history :: List.take (compileHistorys.Length - 1) compileHistorys }       
+                        CompileHistorys = 
+                            let lastHistory = List.last compileHistorys
+                            CompileHistory.tryDeleteDll lastHistory
+                            history :: List.take (compileHistorys.Length - 1) compileHistorys }       
         
 
         let private dbPath = "CellScript.Server.Fcs.db"

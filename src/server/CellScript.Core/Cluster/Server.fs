@@ -26,12 +26,11 @@ module Server =
                 let log = ctx.Log.Value
                 let cluster = Cluster.Get(ctx.System)
 
-                let self: ClusterActor<'ServerMsg> = ClusterActor.retype (ClusterActor.ofIActorRef ctx.Self)
+                let self = {Address = ctx.Self.Path.Address; Role = name }
 
                 let actorSelectOfAddress addr =
-                    let remoteAddr = sprintf "%O/user/%s" addr clientRoleName
-                    let remoteClient = TypedActorSelectionPersistent.create system remoteAddr
-                    { Actor = Choice2Of2 remoteClient
+                    { Role = clientRoleName
+                      System = system
                       Address = addr }
 
                 let rec loop (model: Model<'CallbackMsg, 'ServerModel>) = actor {
@@ -40,19 +39,21 @@ module Server =
                     let sender = ctx.Sender()
 
                     match msg with
-                    | :? EndpointMsg<'CallbackMsg, 'ServerMsg> as msg ->
+                    | :? EndpointMsg as msg ->
                         match msg with 
-                        | EndpointMsg.AddClient (client: ClusterActor<'CallbackMsg>) ->
-                            let sender = ctx.Sender()
-                            let client = { client with Address = sender.Path.Address }
-                            log.Info (sprintf "[SERVER] Add remote client: %A" client.Address)
-                            let newModel = 
-                                { model with 
-                                    Nodes = 
-                                        model.Nodes.Add (client.Address, (client))
-                                } 
-                            notify newModel.Nodes
-                            return! loop newModel
+                        | EndpointMsg.AddClient (client: ClusterActorPersistent) ->
+                            if sender.Path.Name = clientRoleName then 
+                                let client = { client with Address = sender.Path.Address }
+                                log.Info (sprintf "[SERVER] Add remote client: %A" client.Address)
+                                let newModel = 
+                                    { model with 
+                                        Nodes = 
+                                            model.Nodes.Add (client.Address, ClusterActor.ofPersistent system (client))
+                                    } 
+                                notify newModel.Nodes
+                                return! loop newModel
+                            else 
+                                log.Error "[SERVER] Unexcepted "
 
                         | _ ->
                             log.Error (sprintf "[SERVER] Unexcepted msg %A" msg)
@@ -82,7 +83,7 @@ module Server =
 
                             notify newModel.Nodes
 
-                            let addServer: EndpointMsg<'CallbackMsg, 'ServerMsg> = EndpointMsg.AddServer self
+                            let addServer: EndpointMsg = EndpointMsg.AddServer self
 
                             ClusterActor.retype remoteClient <! addServer
 
@@ -132,7 +133,9 @@ module Server =
                             | None, true ->
                                 log.Info (sprintf "[SERVER] Remote Node joined %A" sender.Path.Address)
                                 let remoteClient = actorSelectOfAddress sender.Path.Address
-                                model.Nodes.Add(sender.Path.Address, remoteClient)
+                                let newNodes = model.Nodes.Add(sender.Path.Address, remoteClient)
+                                notify newNodes
+                                newNodes
                             | _ -> 
                                 log.Error (sprintf "[SERVER] Unknown remtoe client %A" sender.Path.Address )
                                 model.Nodes

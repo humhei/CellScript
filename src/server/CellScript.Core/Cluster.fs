@@ -56,6 +56,7 @@ module Cluster =
                         }
                       }
                       cluster {
+                        //client-max-ask-time = 5s
                         auto-down-unreachable-after = 5s
                         seed-nodes = [ "akka.tcp://%s@localhost:%d/" ]
                         roles = [%s]
@@ -86,12 +87,24 @@ module Cluster =
 
     type Client<'ServerMsg> =
         { RemoteServer: ICanTell<'ServerMsg>
-          Logger: ILoggingAdapter }
+          Logger: ILoggingAdapter
+          MaxAskTime: TimeSpan option }
 
     [<RequireQualifiedAccess>]
     module Client =
 
         let createAgent seedPort (handleClientCallback: ILoggingAdapter -> ClientCallbackMsg -> ActorEffect<ClientCallbackMsg>): Client<'ServerMsg> =
+            let config = Config.createClusterConfig [CLIENT] 0 seedPort
+
+            let maxAskTime = 
+                let time = config.GetTimeSpan("akka.cluster.client-max-ask-time")
+                if time = TimeSpan() 
+                then None
+                else Some time
+
+            let seedNodes = 
+                SeedNodes (config.GetStringList("akka.cluster.seed-nodes"))
+
             let system = createClusterSystem [CLIENT] 0 seedPort
 
             let log = system.Log
@@ -100,10 +113,11 @@ module Cluster =
 
             let remoteServer: ICanTell<'ServerMsg> = 
 
-                ClientAgent.create system CLIENT SERVER (Some callbackActor)
+                ClientAgent.create seedNodes system CLIENT SERVER (Some callbackActor)
 
             { RemoteServer = remoteServer
-              Logger = log }
+              Logger = log
+              MaxAskTime = maxAskTime }
 
     [<RequireQualifiedAccess>]
     module Server =

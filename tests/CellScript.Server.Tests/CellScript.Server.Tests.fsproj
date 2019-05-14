@@ -24,6 +24,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Include="Script.fsx" />
     <Compile Include="RemoteServer.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
@@ -33,6 +34,8 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
+
+  <ItemGroup />
 
   <ItemGroup>
     <ProjectReference Include="..\CellScript.Core.Tests\CellScript.Core.Tests.fsproj" />

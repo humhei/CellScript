@@ -32,12 +32,14 @@ module Types =
           WorkbookPath: string
           SheetName: string
           Content: obj[,] }
+    with 
+        member xlRef.CellAddress = ExcelAddress(xlRef.RowFirst, xlRef.ColumnFirst, xlRef.RowLast, xlRef.ColumnLast)
 
     [<RequireQualifiedAccess>]
     module SerializableExcelReference =
 
         let cellAddress (xlRef: SerializableExcelReference) = 
-            ExcelAddress(xlRef.RowFirst, xlRef.ColumnFirst, xlRef.RowLast, xlRef.ColumnLast)
+            xlRef.CellAddress
 
         let createByFile (rangeIndexer: string) sheetName workbookPath =
             use sheet = Excel.getWorksheetByName sheetName workbookPath

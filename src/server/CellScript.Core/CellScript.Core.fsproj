@@ -3,7 +3,7 @@
     <TargetFrameworks>netstandard2.0</TargetFrameworks>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="Cluster\Types.fs" />
+    <Compile Include="Cluster\ClusterTypes.fs" />
     <Compile Include="Cluster\Client.fs" />
     <Compile Include="Cluster\Server.fs" />
     <Compile Include="..\..\..\paket-files\build\Ravadre\NLog.FSharp\NLog.FSharp\Logger.fs" />

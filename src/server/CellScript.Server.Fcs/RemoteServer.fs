@@ -74,8 +74,16 @@ let run (logger: NLog.FSharp.Logger) =
 
                     File.writeStringWithEncoding Encoding.UTF8 false fsxFile code
                     let sender = ctx.Sender()
-                    sender <! ClientCallbackMsg.Exec ("code", [scriptsDir.TrimEnd('\\').TrimEnd('/'); fsxFile], scriptsDir )
-
+                    
+                    //let editor = Configuration.load().GetString("akka.editor", @"C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\Common7\IDE\devenv.exe")
+                    let editor = Configuration.load().GetString("akka.editor", @"code")
+                    
+                    let toolName = Path.GetFileNameWithoutExtension editor
+                    if String.Compare(toolName, "code", true) = 0 then
+                        sender <! ClientCallbackMsg.Exec (editor, [scriptsDir.TrimEnd('\\').TrimEnd('/'); fsxFile], scriptsDir )
+                    elif String.Compare(toolName, "devenv", true) = 0 then
+                        sender <! ClientCallbackMsg.Exec (editor, ["/Edit"; fsxFile], scriptsDir)
+                    else failwithf "Unkonwn editor %s" editor
                 let result =
                     try 
                         editFsxFileIncode xlRef

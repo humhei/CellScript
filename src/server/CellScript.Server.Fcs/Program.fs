@@ -137,9 +137,8 @@ let createHostBuilder logger args =
 
 [<EntryPoint>]
 let main args =
-
     let logger = NLog.FSharp.Logger(NLog.Web.NLogBuilder.ConfigureNLog("nlog.config").GetCurrentClassLogger())
-    try 
+    try
         logger.Debug "int main"
         createHostBuilder logger args
     with ex ->

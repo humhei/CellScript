@@ -174,7 +174,7 @@ let createCellScriptWatcher scriptsDir (logger: NLog.FSharp.Logger) system : IAc
                 { newModel with ChangeWatcher = Some newChangeWatcher }
 
             let! msg = ctx.Receive() : IO<obj>
-            logger.Info "cellscript  watcher receive %A" msg
+            logger.Info "cellscript watcher receive %A" msg
 
             match msg with
             | :? UpdateCallbackClientsEvent<ClientCallbackMsg> as updateClientEvent ->
@@ -196,6 +196,7 @@ let createCellScriptWatcher scriptsDir (logger: NLog.FSharp.Logger) system : IAc
                     let xlRefs = 
                         fileChanges
                         |> List.ofSeq
+                        |> List.distinctBy (fun fileChange -> fileChange.FullPath)
                         |> List.map (fun fileChange ->
                             let contents = File.readAsStringWithEncoding Encoding.UTF8 fileChange.FullPath
                             let xlRef = 

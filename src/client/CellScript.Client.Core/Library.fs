@@ -15,6 +15,8 @@ open CellScript.Core.Cluster
 open CellScript.Core.Types
 open Akka.Event
 open System.Collections.Generic
+open System.Diagnostics
+open System.IO
 
 [<RequireQualifiedAccess>]
 type ApiLambda =
@@ -48,7 +50,7 @@ with
     /// internal helper function
     member x.InvokeFunction (message): Async<obj[,]> = 
         async {     
-            let! (result: Result<obj , string>) = x.RemoteServer <? (message)
+            let! (result: Result<obj , string>) = x.RemoteServer.Ask (message,x.Value.MaxAskTime)
             let result: obj[,] = 
                 match result with 
                 | Result.Ok response -> 
@@ -65,7 +67,7 @@ with
 
     member x.InvokeCommand (message) = 
         async {
-            match! x.RemoteServer <? message with
+            match! x.RemoteServer.Ask(message, x.Value.MaxAskTime) with
             | Result.Ok (_: obj) -> x.Logger.Info (sprintf "Invoke command %A succesfully" message)
             | Result.Error error -> x.Logger.Error (sprintf "Erros when invoke command %A: %s" message error)
         } |> Async.Start
@@ -391,16 +393,21 @@ module NetCoreClient =
 
                     let exec tool args dir =
                         let argLine = Args.toWindowsCommandLine args
-                        logger.Info (sprintf "%s %s" tool argLine)
+                        let fullArgLine = (sprintf "%s %s" tool argLine)
+                        logger.Info fullArgLine
                         let result =
-                            args
-                            |> CreateProcess.fromRawCommand tool
-                            |> CreateProcess.withWorkingDirectory dir
-                            |> Proc.run
-
-                        if result.ExitCode <> 0
-                        then failwithf "Error while running %s with args %A" tool (List.ofSeq args)
-
+                            let startInfo = ProcessStartInfo(tool,argLine)
+                            startInfo.WorkingDirectory <- dir
+                            Process.Start(startInfo)
+                        result.WaitForExit()
+                        match result.ExitCode with 
+                        | -1 when String.Compare (Path.GetFileNameWithoutExtension(tool),"devenv",true) = 0 ->
+                            ()
+                        | i when i <> 0 ->
+                            failwithf "Error while running %s" 
+                                (Args.toWindowsCommandLine ([tool] @ List.ofSeq args))
+                        | 0 -> ()
+                        | _ -> failwith "Invalid token"
                     exec tool args workingDir
                     Ignore
 

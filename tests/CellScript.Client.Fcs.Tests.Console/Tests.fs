@@ -98,7 +98,7 @@ let evalTests =
             Expect.hasLength excelFunctions 1 "pass"
         )
 
-        ftestCase "string test" (fun _ ->
+        testCase "string test" (fun _ ->
             testSingleton (fun a -> string a + "8") "B2" "B3"
         )
 

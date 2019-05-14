@@ -1,0 +1,34 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net462</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="Utils.fs" />
+    <Compile Include="..\..\..\..\FCSWatch\src\fcswatch-cli\Share.fs" />
+    <Compile Include="ExcelDna.fs" />
+    <Compile Include="Program.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Argu" Version="5.2.0" />
+    <PackageReference Include="ExcelDna.Integration" Version="0.34.6" />
+    <PackageReference Include="ExcelDna.Interop" Version="14.0.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\..\FCSWatch\src\FcsWatch.Binary\FcsWatch.Binary.fsproj" />
+    <ProjectReference Include="..\FcsWatch.AutoReload.Core\FcsWatch.AutoReload.Core.fsproj" />
+  </ItemGroup>
+
+
+
+
+  <ItemGroup>
+    <PackageReference Update="FSharp.Core" Version="4.6.2" />
+    <PackageReference Update="System.ValueTuple" Version="4.5.0" />
+  </ItemGroup>
+
+</Project>

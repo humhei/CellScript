@@ -1,36 +1,45 @@
 module CellScript.Client.Tests.Registration
 open ExcelDna.Integration
 open ExcelDna.Registration
-open CellScript.Core
-open CellScript.Client.UDF
 open ExcelDna.Registration.FSharp
-open CellScript.Client
+open CellScript.Client.Core
+open CellScript.Client.Desktop
+open CellScript.Core.Tests
+open NLog
+
+let logger = NLog.FSharp.Logger(LogManager.GetCurrentClassLogger())
+let client = NetCoreClient.create<OuterMsg> 9050 
+let apiLambdas = NetCoreClient.apiLambdas logger client
+let excelFunctions() =
+    Registration.excelFunctions apiLambdas
+    |> FsAsyncRegistration.ProcessFsAsyncRegistrations
+    |> AsyncRegistration.ProcessAsyncRegistrations
+    |> ParamsRegistration.ProcessParamsRegistrations
+    |> MapArrayFunctionRegistration.ProcessMapArrayFunctions
 
 let installExcelFunctions() =
-    logger.Diagnostics "Begin install excel functions"
+    let logger = NLog.FSharp.Logger(LogManager.GetCurrentClassLogger())
+
+    logger.Info "Begin install excel functions"
     ExcelIntegration.RegisterUnhandledExceptionHandler(fun ex ->
         let exText = ex.ToString()
         "!!! ERROR: " + exText
         |> box
     )
-    Registration.excelFunctions()
-    |> Seq.append (ExcelRegistration.GetExcelFunctions())
-    |> List.ofSeq
-    |> fun fns -> ParameterConversionRegistration.ProcessParameterConversions (fns, Registration.paramConvertConfig)
-    |> FsAsyncRegistration.ProcessFsAsyncRegistrations
-    |> AsyncRegistration.ProcessAsyncRegistrations
-    |> ParamsRegistration.ProcessParamsRegistrations
-    |> MapArrayFunctionRegistration.ProcessMapArrayFunctions
-    |> ExcelRegistration.RegisterFunctions
+
+
+    let excelFunctions = excelFunctions()
+
+    ExcelRegistration.RegisterFunctions excelFunctions
 
     ExcelRegistration.GetExcelCommands().RegisterCommands()
-    logger.Diagnostics "End install excel functions"
+    logger.Info "End install excel functions"
 
 type FsAsyncAddIn () =
-
     interface IExcelAddIn with
         member this.AutoOpen () =
             // appStation.Initial()
             installExcelFunctions()
+
         member this.AutoClose () =
             ()

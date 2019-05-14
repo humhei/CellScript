@@ -1,0 +1,30 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net462</TargetFramework>
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
+    <DefineConstants>TRACE;Client</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\server\CellScript.Core\CellScript.Core.fsproj">
+      <Name>CellScript.Core.fsproj</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\CellScript.Client.Core\CellScript.Client.Core.fsproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="Registration.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="ExcelDna.Registration.FSharp" Version="0.34.7" />
+    <PackageReference Include="System.Net.Http" Version="4.3.4" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="FSharp.Core">
+      <HintPath>..\..\..\..\visualfsharp\artifacts\bin\FSharp.Build\Debug\netstandard2.0\FSharp.Core.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Update="FSharp.Core" Version="4.6.2" />
+  </ItemGroup>
+</Project>

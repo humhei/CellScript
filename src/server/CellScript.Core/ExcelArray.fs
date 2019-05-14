@@ -1,41 +1,46 @@
 namespace CellScript.Core
 open Deedle
-open Registration
 open CellScript.Core.Extensions
 open Types
+open Newtonsoft.Json
+open Akka.Util
 
-[<CustomParamConversion>]
 type ExcelArray = ExcelArray of ExcelFrame<int,int>
 with
-    member x.MapValues mapping =
+
+    member x.AsExcelFrame = 
         let (ExcelArray frame) = x
-        mapping frame
-        |> ExcelArray
+        frame
 
-    member x.RemoveEmptyCols() =
-        x.MapValues ExcelFrame.removeEmptyCols
+    member x.AsFrame = x.AsExcelFrame.AsFrame
 
-    static member convert =
-        fun (table:obj[,]) ->
-            Frame.ofArray2D (Array2D.rebase table)
-            |> ExcelFrame
-            |> ExcelArray
+    static member Convert(array2D: obj[,]) =
+        let frame = ExcelFrame.ofArray2D array2D
+        ExcelArray(frame)
 
-    static member Convert() =
-        ExcelArray.convert
-        |> CustomParamConversion.array2D
+    interface IToArray2D with 
+        member x.ToArray2D() =
+            ExcelFrame.toArray2D x.AsExcelFrame
 
-    interface ICustomReturn with
-        member x.ReturnValue() =
-            let (ExcelArray excelFrame) = x.RemoveEmptyCols()
-            ExcelFrame.toArray2D excelFrame
+    interface ISurrogated with 
+        member x.ToSurrogate(system) = 
+            ExcelArraySurrogate ((x :> IToArray2D).ToArray2D()) :> ISurrogate
+
+and private ExcelArraySurrogate = ExcelArraySurrogate of obj [,]
+with 
+    interface ISurrogate with 
+        member x.FromSurrogate(system) = 
+            let (ExcelArraySurrogate array2D) = x
+            ExcelArray.Convert array2D :> ISurrogated
+
 
 [<RequireQualifiedAccess>]
 module ExcelArray =
-    let map mapping (ExcelArray array) =
-        array
+    let map mapping (excelArray: ExcelArray) =
+        excelArray.AsFrame
         |> mapping
+        |> ExcelFrame
         |> ExcelArray
         
     let mapValuesString mapping =
-        map (ExcelFrame.mapValuesString mapping)
+        map (Frame.mapValuesString mapping)

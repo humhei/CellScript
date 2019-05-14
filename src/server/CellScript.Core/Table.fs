@@ -1,31 +1,45 @@
 namespace CellScript.Core
 open Deedle
-open Registration
 open CellScript.Core.Extensions
 open Types
+open Akka.Util
 
-[<CustomParamConversion>]
-type Table = Table of ExcelFrame<int,string>
-with
-    member x.Headers =
-        let (Table excelFrame) = x
-        excelFrame.AsFrame.ColumnKeys
+type Table = Table of ExcelFrame<int, string>
+with 
+    member x.AsExcelFrame = 
+        let (Table frame) = x
+        frame
 
-    interface ICustomReturn with
-        member x.ReturnValue() =
-            let (Table excelFrame) = x
-            ExcelFrame.toArray2DWithHeader excelFrame
+    member x.AsFrame = 
+        let (Table frame) = x
+        frame.AsFrame
 
-    static member Convert() =
-        ExcelFrame.ofArray2DWithHeader >> Table
-        |> CustomParamConversion.array2D
+    static member Convert array2D =
+        let frame = ExcelFrame.ofArray2DWithHeader array2D
+        Table frame
+
+    interface IToArray2D with 
+        member x.ToArray2D() =
+            ExcelFrame.toArray2DWithHeader x.AsExcelFrame
+
+    interface ISurrogated with 
+        member x.ToSurrogate(system) = 
+            TableSurrogate ((x :> IToArray2D).ToArray2D()) :> ISurrogate
+
+and private TableSurrogate = TableSurrogate of obj [,]
+with 
+    interface ISurrogate with 
+        member x.FromSurrogate(system) = 
+            let (TableSurrogate array2D) = x
+            Table.Convert array2D :> ISurrogated
+
 
 [<RequireQualifiedAccess>]
 module Table =
-    let value (Table table) = table
 
-    let mapFrame mapping (Table table) =
-        ExcelFrame.map mapping table
+    let mapFrame mapping (table: Table) =
+        mapping table.AsFrame
+        |> ExcelFrame
         |> Table
 
     let item (indexes: seq<string>) table =

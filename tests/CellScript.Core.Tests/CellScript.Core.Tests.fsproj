@@ -1,18 +1,17 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFrameworks>netstandard2.0;net462</TargetFrameworks>
   </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Msg.fs" />
+  </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\server\CellScript.Core\CellScript.Core.fsproj">
       <Name>CellScript.Core.fsproj</Name>
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="Extensions.fs" />
-    <Compile Include="Shoes.fs" />
-    <Compile Include="Literals.fs" />
-    <Compile Include="LiteDB.fs" />
-    <Compile Include="PivotTable.fs" />
+    <PackageReference Update="ExcelProcesser" Version="0.3.10" />
+    <PackageReference Update="FSharp.Core" Version="4.6.2" />
   </ItemGroup>
-  <Import Project="..\..\.paket\Paket.Restore.targets" />
 </Project>

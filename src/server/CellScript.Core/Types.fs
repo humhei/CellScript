@@ -2,38 +2,92 @@ namespace CellScript.Core
 open Deedle
 open Extensions
 open System
+open Newtonsoft.Json
+open Akka.Util
+open ExcelProcess
+open OfficeOpenXml
 
 module Types =
+
+    type CellScriptEvent<'EventArg> = CellScriptEvent of 'EventArg
+
+    type SheetActiveArg =
+        { WorkbookPath: string 
+          WorksheetName: string }
+
+
+    [<AttributeUsage(AttributeTargets.Property)>]
+    type SubMsgAttribute() =
+        inherit Attribute()
+
+
+    type CommandSetting =
+        { Shortcut: string option }
 
     type SerializableExcelReference =
         { ColumnFirst: int
           RowFirst: int
           ColumnLast: int
-          RowLast: int }
-
-    type ExcelEmpty() = class end
-    type ExcelError() = class end
-
+          RowLast: int
+          WorkbookPath: string
+          SheetName: string
+          Content: obj[,] }
+    with 
+        member xlRef.CellAddress = ExcelAddress(xlRef.RowFirst, xlRef.ColumnFirst, xlRef.RowLast, xlRef.ColumnLast)
 
     [<RequireQualifiedAccess>]
-    module CellValue =
-        let isArrayEmpty (v: obj) =
+    module SerializableExcelReference =
+
+        let cellAddress (xlRef: SerializableExcelReference) = 
+            xlRef.CellAddress
+
+        let createByFile (rangeIndexer: string) sheetName workbookPath =
+            use sheet = Excel.getWorksheetByName sheetName workbookPath
+            use range = sheet.Cells.[rangeIndexer]
+
+            let rowStart = range.Start.Row
+            let rowEnd = range.End.Row
+            let columnStart = range.Start.Column
+            let columnEnd = range.End.Column
+
+            let content =
+                array2D
+                    [ for i = rowStart to rowEnd do 
+                        yield
+                            [ for j = columnStart to columnEnd do yield range.[i,j].Value ]
+                    ] 
+            { ColumnFirst = columnStart
+              RowFirst = rowStart
+              ColumnLast = columnEnd
+              RowLast = rowEnd
+              WorkbookPath = workbookPath
+              SheetName = sheetName
+              Content = content }   
+
+
+        let positionText (xlRef: SerializableExcelReference) = 
+            sprintf "%s_%s_%d_%d_%d_%d" xlRef.WorkbookPath xlRef.SheetName xlRef.RowFirst xlRef.ColumnFirst xlRef.RowLast xlRef.ColumnLast
+
+    type CommandCaller = CommandCaller of SerializableExcelReference
+
+    type internal ExcelEmpty() = class end
+    type internal ExcelError() = class end
+
+    [<RequireQualifiedAccess>]
+    module internal CellValue =
+        let private isArrayEmpty (v: obj) =
             match v with
             | :? float as v -> v = 0.
             | _ -> false
 
-        let isNotArrayEmpty (v: obj) =
-            isArrayEmpty v |> not
 
-        let isTextEmpty (v: obj) =
+        let private isTextEmpty (v: obj) =
             match v with
             | :? string as v -> v = ""
             | _ -> false
 
-        let isNotTextEmpty (v: obj) =
-            isTextEmpty v |> not
 
-        let isEmpty (v: obj) =
+        let private isEmpty (v: obj) =
             isArrayEmpty v || isTextEmpty v
 
         let isNotEmpty (v: obj) =
@@ -60,8 +114,6 @@ module Types =
         member x.AsFrame =
             let (ExcelFrame frame) = x
             frame
-
-
 
 
     [<RequireQualifiedAccess>]
@@ -91,19 +143,28 @@ module Types =
                 |> array2D
             result
 
-        let ofArray2DWithHeader (array:obj[,]) =
-            let fixHeaders headers =
-                headers |> Seq.mapi (fun i (header: obj) ->
-                    match header with
-                    | :? ExcelEmpty | :? ExcelError -> box (sprintf "Column%d" i)
-                    | _ -> header
-                )
-            let fixContents contents =
-                contents |> Array2D.map (fun (value: obj) ->
-                    match value with
-                    | :? ExcelEmpty | :? ExcelError -> box null
-                    | _ -> value
-                )
+        let private fixHeaders headers =
+            headers |> Seq.mapi (fun i (header: obj) ->
+                match header with
+                | :? ExcelEmpty | :? ExcelError -> box (sprintf "Column%d" i)
+                | _ -> header
+            )
+        let private fixContents contents =
+            contents |> Array2D.map (fun (value: obj) ->
+                match value with
+                | :? ExcelEmpty | :? ExcelError -> box null
+                | _ -> value
+            )
+
+        let ofArray2D (array2D: obj[,]) =
+            array2D
+            |> fixContents
+            |> Array2D.rebase
+            |> Frame.ofArray2D
+            |> ExcelFrame
+
+        let ofArray2DWithHeader (array: obj[,]) =
+
 
             let array = Array2D.rebase array
 
@@ -113,3 +174,4 @@ module Types =
 
             Frame.indexColsWith headers contents
             |> ExcelFrame
+

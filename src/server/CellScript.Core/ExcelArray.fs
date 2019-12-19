@@ -2,7 +2,6 @@ namespace CellScript.Core
 open Deedle
 open CellScript.Core.Extensions
 open Types
-open Newtonsoft.Json
 open Akka.Util
 
 type ExcelArray = ExcelArray of ExcelFrame<int,int>
@@ -36,11 +35,10 @@ with
 
 [<RequireQualifiedAccess>]
 module ExcelArray =
-    let map mapping (excelArray: ExcelArray) =
-        excelArray.AsFrame
-        |> mapping
-        |> ExcelFrame
+    let mapFrame mapping (excelArray: ExcelArray) =
+        ExcelFrame.mapFrame mapping excelArray.AsExcelFrame
         |> ExcelArray
         
     let mapValuesString mapping =
-        map (Frame.mapValuesString mapping)
+        mapFrame (Frame.mapValuesString mapping)
+

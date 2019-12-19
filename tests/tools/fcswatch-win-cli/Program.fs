@@ -4,10 +4,12 @@ open Argu
 open FcsWatch.Core
 open FcsWatch.Binary
 open Fcswatch.Win.Cli.Utils
-open FcsWatch.AutoReload.Core.Remote
+open FcsWatch.AutoReload.ExcelDna.Core
 open Fcswatch.Win.Cli
 open Fake.Core
 open Fcswatch.Win.Cli.ExcelDna
+open FcsWatch.AutoReload.ExcelDna.Core.Remote
+open System.Threading
 
 
 type CoreArguments = FcsWatch.Cli.Share.Arguments
@@ -41,8 +43,8 @@ with
         member x.Usage =
             match x with 
             | ExcelDna _ -> "develop excel dna plugin, reload and load plugin by <xll|addin>, default is xll"
-            | XLL_ServerPort _ -> "xll server port, default is 10050"
-            | XLL_ClientPort _ -> "xll client port, default is 10040"
+            | XLL_ServerPort _ -> "xll server port, default is 8090"
+            | XLL_ClientPort _ -> "xll client port, default is 0"
             | _ -> ((x.AsCore.Value) :> IArgParserTemplate).Usage
 
 
@@ -54,8 +56,8 @@ module ReloadByArguments =
         | ReloadByArguments.Xll ->
             let project = Project.create projectPath
             let client = 
-                let clientPort = results.GetResult(XLL_ClientPort,10040)
-                let serverPort = results.GetResult(XLL_ServerPort,10050)
+                let clientPort = results.GetResult(XLL_ClientPort,0)
+                let serverPort = results.GetResult(XLL_ServerPort,8090)
                 Client.create clientPort serverPort
             ExcelDna.ReloadBy.Xll (project, client)
 
@@ -73,7 +75,7 @@ let main argv =
         results.GetAllResults()
         |> List.choose (fun (result: Arguments) -> result.AsCore)
         |> coreParser.ToParseResults
-        |> FcsWatch.Cli.Share.processParseResults parser.PrintUsage
+        |> FcsWatch.Cli.Share.processParseResults [||]
 
     let developmentTarget = 
         match results.TryGetResult ExcelDna with 
@@ -87,7 +89,6 @@ let main argv =
         { processResult.Config with 
             DevelopmentTarget = developmentTarget }
 
-    
     runFcsWatcher config processResult.ProjectFile
 
     0 // return an integer exit code

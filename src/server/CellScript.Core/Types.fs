@@ -2,29 +2,41 @@ namespace CellScript.Core
 open Deedle
 open Extensions
 open System
-open Newtonsoft.Json
-open Akka.Util
-open ExcelProcess
 open OfficeOpenXml
+open System.IO
 
 module Types =
 
     type CellScriptEvent<'EventArg> = CellScriptEvent of 'EventArg
 
-    type SheetActiveArg =
+    type SheetReference =
         { WorkbookPath: string 
-          WorksheetName: string }
-
+          SheetName: string }
 
     [<AttributeUsage(AttributeTargets.Property)>]
     type SubMsgAttribute() =
         inherit Attribute()
 
 
+    [<AttributeUsage(AttributeTargets.Property)>]
+    type NameInheritedSubMsgAttribute() =
+        inherit Attribute()
+
     type CommandSetting =
         { Shortcut: string option }
 
-    type SerializableExcelReference =
+    type ExcelErrorEnum =
+        | Null = 0s
+        | Div = 7s
+        | Value = 15s
+        | Ref = 23s
+        | Name = 29s
+        | Num = 36s
+        | NA = 42s
+        | GettingData = 43s
+
+
+    type ExcelRangeContactInfo =
         { ColumnFirst: int
           RowFirst: int
           ColumnLast: int
@@ -35,15 +47,18 @@ module Types =
     with 
         member xlRef.CellAddress = ExcelAddress(xlRef.RowFirst, xlRef.ColumnFirst, xlRef.RowLast, xlRef.ColumnLast)
 
+        override xlRef.ToString() = sprintf "%s_%s_%d_%d_%d_%d" xlRef.WorkbookPath xlRef.SheetName xlRef.RowFirst xlRef.ColumnFirst xlRef.RowLast xlRef.ColumnLast
+
+
     [<RequireQualifiedAccess>]
-    module SerializableExcelReference =
+    module ExcelRangeContactInfo =
 
-        let cellAddress (xlRef: SerializableExcelReference) = 
-            xlRef.CellAddress
+        let cellAddress (xlRef: ExcelRangeContactInfo) = xlRef.CellAddress
 
-        let createByFile (rangeIndexer: string) sheetName workbookPath =
-            use sheet = Excel.getWorksheetByName sheetName workbookPath
-            use range = sheet.Cells.[rangeIndexer]
+        let readFromFile (rangeGettingArg: RangeGettingArg) (sheetGettingArg: SheetGettingArg) workbookPath =
+            use excelPackage = new ExcelPackage(FileInfo(workbookPath))
+            let sheet = excelPackage.GetWorkSheet sheetGettingArg
+            use range = sheet.GetRange(rangeGettingArg)
 
             let rowStart = range.Start.Row
             let rowEnd = range.End.Row
@@ -56,30 +71,67 @@ module Types =
                         yield
                             [ for j = columnStart to columnEnd do yield range.[i,j].Value ]
                     ] 
+
             { ColumnFirst = columnStart
               RowFirst = rowStart
               ColumnLast = columnEnd
               RowLast = rowEnd
               WorkbookPath = workbookPath
-              SheetName = sheetName
+              SheetName = sheet.Name
               Content = content }   
 
+    type ExcelPackage with 
+        member excelPackage.GetWorkSheet(xlRef: ExcelRangeContactInfo) =
+            excelPackage.Workbook.Worksheets
+            |> Seq.find (fun worksheet -> worksheet.Name = xlRef.SheetName)
 
-        let positionText (xlRef: SerializableExcelReference) = 
-            sprintf "%s_%s_%d_%d_%d_%d" xlRef.WorkbookPath xlRef.SheetName xlRef.RowFirst xlRef.ColumnFirst xlRef.RowLast xlRef.ColumnLast
+        member excelPackage.GetExcelRange(xlRef: ExcelRangeContactInfo) =
+            let workbookSheet = excelPackage.GetWorkSheet xlRef
+            workbookSheet.Cells.[xlRef.RowFirst, xlRef.ColumnFirst, xlRef.RowLast, xlRef.ColumnLast]
 
-    type CommandCaller = CommandCaller of SerializableExcelReference
 
-    type internal ExcelEmpty() = class end
-    type internal ExcelError() = class end
+    type SerializableExcelReference = 
+        { ColumnFirst: int
+          RowFirst: int
+          ColumnLast: int
+          RowLast: int
+          WorkbookPath: string
+          SheetName: string }
+    with 
+        member xlRef.CellAddress = ExcelAddress(xlRef.RowFirst, xlRef.ColumnFirst, xlRef.RowLast, xlRef.ColumnLast)
+
+    [<RequireQualifiedAccess>]
+    module SerializableExcelReference =
+        let ofExcelRangeContactInfo (xlRef: ExcelRangeContactInfo) =
+            { ColumnFirst = xlRef.ColumnFirst
+              RowFirst = xlRef.RowFirst
+              ColumnLast = xlRef.ColumnLast
+              RowLast = xlRef.RowLast
+              WorkbookPath = xlRef.WorkbookPath
+              SheetName = xlRef.SheetName }
+
+        let toExcelRangeContactInfo content (xlRef: SerializableExcelReference) : ExcelRangeContactInfo =
+            { ColumnFirst = xlRef.ColumnFirst
+              RowFirst = xlRef.RowFirst
+              ColumnLast = xlRef.ColumnLast
+              RowLast = xlRef.RowLast
+              WorkbookPath = xlRef.WorkbookPath
+              SheetName = xlRef.SheetName
+              Content = content }
+
+        let cellAddress xlRef =
+            ExcelAddress(xlRef.RowFirst, xlRef.ColumnFirst, xlRef.RowLast, xlRef.ColumnLast)
+
+
+
+    type CommandCaller = CommandCaller of ExcelRangeContactInfo
+
+    type FunctionSheetReference = FunctionSheetReference of SheetReference
+
+
 
     [<RequireQualifiedAccess>]
     module internal CellValue =
-        let private isArrayEmpty (v: obj) =
-            match v with
-            | :? float as v -> v = 0.
-            | _ -> false
-
 
         let private isTextEmpty (v: obj) =
             match v with
@@ -88,7 +140,10 @@ module Types =
 
 
         let private isEmpty (v: obj) =
-            isArrayEmpty v || isTextEmpty v
+            match v with 
+            | null -> true
+            | _ ->
+                isTextEmpty v
 
         let isNotEmpty (v: obj) =
             isEmpty v |> not
@@ -107,26 +162,25 @@ module Types =
         let isNotMissingOrCellValueEmpty (v: obj option) =
             isMissingOrCellValueEmpty v |> not
 
-
+    /// both contents and headers must be fixed before created
     type ExcelFrame<'TRowKey,'TColumnKey when 'TRowKey: equality and 'TColumnKey: equality> =
-        ExcelFrame of Frame<'TRowKey,'TColumnKey>
+        private ExcelFrame of Frame<'TRowKey,'TColumnKey>
     with
         member x.AsFrame =
             let (ExcelFrame frame) = x
             frame
 
-
     [<RequireQualifiedAccess>]
     module ExcelFrame =
-        let map mapping (ExcelFrame frame) =
+        let mapFrame mapping (ExcelFrame frame) =
             mapping frame
             |> ExcelFrame
 
         let mapValuesString mapping =
-            map (Frame.mapValuesString mapping)
+            mapFrame (Frame.mapValuesString mapping)
 
         let removeEmptyCols excelFrame =
-            map (Frame.filterColValues (fun column ->
+            mapFrame (Frame.filterColValues (fun column ->
                 Seq.exists CellValue.isNotEmpty column.Values
             )) excelFrame
 
@@ -144,15 +198,27 @@ module Types =
             result
 
         let private fixHeaders headers =
-            headers |> Seq.mapi (fun i (header: obj) ->
+            let headers = List.ofSeq headers
+            headers |> List.mapi (fun i (header: obj) ->
                 match header with
-                | :? ExcelEmpty | :? ExcelError -> box (sprintf "Column%d" i)
-                | _ -> header
+                | :? ExcelErrorValue 
+                | null -> 
+                    (sprintf "Column%d" i)
+                | _ -> 
+                    headers.[0 .. i - 1]
+                    |> List.filter(fun preHeader -> preHeader = header)
+                    |> function
+                        | matchHeaders when matchHeaders.Length > 0 ->
+                            let headerText = header.ToString()
+                            sprintf "%s%d" headerText (matchHeaders.Length + 1) 
+                        | [] -> header.ToString()
+                        | _ -> failwith "invalid token"
             )
+
         let private fixContents contents =
             contents |> Array2D.map (fun (value: obj) ->
                 match value with
-                | :? ExcelEmpty | :? ExcelError -> box null
+                | :? ExcelErrorValue -> box null
                 | _ -> value
             )
 
@@ -164,7 +230,6 @@ module Types =
             |> ExcelFrame
 
         let ofArray2DWithHeader (array: obj[,]) =
-
 
             let array = Array2D.rebase array
 

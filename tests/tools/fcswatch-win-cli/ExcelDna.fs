@@ -12,7 +12,7 @@ open FcsWatch.Binary
 open ExcelDna.Integration
 open System.Xml
 open Utils
-open FcsWatch.AutoReload.Core.Remote
+open FcsWatch.AutoReload.ExcelDna.Core.Remote
 open Akkling
 
 [<RequireQualifiedAccess>]

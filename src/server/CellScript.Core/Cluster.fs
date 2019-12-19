@@ -1,136 +1,75 @@
 ﻿namespace CellScript.Core
 open Akkling
-open System
-open Microsoft.FSharp.Quotations.Patterns
-open Akka.Remote
 open Akka.Event
-open Akka.Cluster.Tools.Singleton
-open Akka.Cluster
 open CellScript.Core.Types
-open Akkling.Cluster.ServerSideDevelopment
-open Akkling.Cluster.ServerSideDevelopment.Client
+open Shrimp.Akkling.Cluster.Intergraction
+open Akka.Configuration
+open Shrimp.Akkling.Cluster.Intergraction.Configuration
+
 
 module Cluster = 
+    type private AssemblyFinder = AssemblyFinder
+
+    let internal referenceConfig = 
+        lazy 
+             ConfigurationFactory.FromResource<AssemblyFinder>("CellScript.Core.reference.conf")
+            |> Configuration.fallBackByApplicationConf
 
 
-
-    let [<Literal>] private SERVER = "server"
-    let [<Literal>] private CELL_SCRIPT_CLUSETER = "cellScriptCluster"
-
+    type ExecArguments =
+        { ToolName: string 
+          Args: string list 
+          WorkingDir: string }
 
     [<RequireQualifiedAccess>]
-    module Config = 
+    module Major = 
+
+        let [<Literal>] private SERVER = "server"
+        let [<Literal>] private CELL_SCRIPT_CLUSETER = "cellScriptCoreCluster"
+
+        let [<Literal>] private CLIENT = "client"
 
         [<RequireQualifiedAccess>]
-        module private Hopac =
-            let listText (lists: string list) =
-                lists
-                |> List.map (sprintf "\"%s\"")
-                |> String.concat ","
+        type CallbackMsg =
+            | UpdateCellValues of xlRefs: ExcelRangeContactInfo list
+            | SetRowHeight of xlRef: ExcelRangeContactInfo * height: float
+            | Exec of ExecArguments
 
+        [<RequireQualifiedAccess>]
+        module private Routed =
+            let port = referenceConfig.Value.GetInt("CellScript.Core.Cluster.Major.port")
 
-        let internal withAppconfigOrWebconfig baseConfig =
-            Configuration.load().WithFallback baseConfig
+        [<RequireQualifiedAccess>]
+        module Client =
+            let create callback: Client<CallbackMsg, 'ServerMsg> =
+                Client(CELL_SCRIPT_CLUSETER, CLIENT, SERVER, 0, Routed.port, callback, ( fun args -> {args with ``akka.loggers`` = Loggers (Set.ofList [Logger.NLog])}))
 
-        let createClusterConfig (roles: string list) remotePort seedPort = 
-            /// ["crawler", "logger"]
-
-            let config = 
-                sprintf 
-                    """
-                    akka {
-                        actor {
-                          provider = cluster
-                          serializers {
-                            hyperion = "Akka.Serialization.HyperionSerializer, Akka.Serialization.Hyperion"
-                          }
-                          serialization-bindings {
-                            "System.Object" = hyperion
-                          }
-                        }
-                      remote {
-                        dot-netty.tcp {
-                          public-hostname = "localhost"
-                          hostname = "localhost"
-                          port = %d
-                        }
-                      }
-                      cluster {
-                        //client-max-ask-time = 5s
-                        auto-down-unreachable-after = 5s
-                        seed-nodes = [ "akka.tcp://%s@localhost:%d/" ]
-                        roles = [%s]
-                      }
-                      persistence {
-                        journal.plugin = "akka.persistence.journal.inmem"
-                        snapshot-store.plugin = "akka.persistence.snapshot-store.local"
-                      }
-                    loglevel = DEBUG
-                    loggers=["Akka.Logger.NLog.NLogLogger, Akka.Logger.NLog"]	
-                    }
-                    """ remotePort CELL_SCRIPT_CLUSETER seedPort (Hopac.listText roles)
-                |> Configuration.parse
-
-            config.WithFallback(ClusterSingletonManager.DefaultConfig())
-            |> withAppconfigOrWebconfig
-
-
-    let private createClusterSystem roles remotePort seedPort = 
-        System.create CELL_SCRIPT_CLUSETER <| Config.createClusterConfig roles remotePort seedPort
-
-    let [<Literal>] private CLIENT = "client"
-
-    [<RequireQualifiedAccess>]
-    type ClientCallbackMsg =
-        | UpdateCellValues of xlRefs: SerializableExcelReference list
-        | Exec of toolName: string * args: string list * workingDir: string
-
-    type Client<'ServerMsg> =
-        { RemoteServer: ICanTell<'ServerMsg>
-          Logger: ILoggingAdapter
-          MaxAskTime: TimeSpan option }
-
-    [<RequireQualifiedAccess>]
-    module Client =
-
-        let createAgent seedPort (handleClientCallback: ILoggingAdapter -> ClientCallbackMsg -> ActorEffect<ClientCallbackMsg>): Client<'ServerMsg> =
-            let config = Config.createClusterConfig [CLIENT] 0 seedPort
-
-            let maxAskTime = 
-                let time = config.GetTimeSpan("akka.cluster.client-max-ask-time")
-                if time = TimeSpan() 
-                then None
-                else Some time
-
-            let seedNodes = 
-                SeedNodes (config.GetStringList("akka.cluster.seed-nodes"))
-
-            let system = createClusterSystem [CLIENT] 0 seedPort
-
-            let log = system.Log
-
-            let callbackActor = spawnAnonymous system (props (actorOf(handleClientCallback log)))
-
-            let remoteServer: ICanTell<'ServerMsg> = 
-
-                ClientAgent.create seedNodes system CLIENT SERVER (Some callbackActor)
-
-            { RemoteServer = remoteServer
-              Logger = log
-              MaxAskTime = maxAskTime }
-
-    [<RequireQualifiedAccess>]
-    module Server =
-
-        let createAgent seedport initialCustomModel (handleMsg) =
-            let system = createClusterSystem [SERVER] seedport seedport
-            Server.createAgent (fun (c: ClientCallbackMsg) -> ()) system SERVER CLIENT initialCustomModel handleMsg
-            system
+        [<RequireQualifiedAccess>]
+        module Server =
+            let create receive =
+                Server(CELL_SCRIPT_CLUSETER, SERVER, CLIENT, Routed.port, Routed.port, ( fun args -> {args with ``akka.loggers`` = Loggers (Set.ofList [Logger.NLog])}), receive)
             
 
+    [<RequireQualifiedAccess>]
+    module COM = 
+        let [<Literal>] private CELL_SCRIPT_COM = "cellScriptCoreCOM"
+        let [<Literal>] private COM_CLIENT = "client"
+        let [<Literal>] private COM_SERVER = "server"
 
+        [<RequireQualifiedAccess>]
+        module private Routed =
+            let port = referenceConfig.Value.GetInt("CellScript.Core.Cluster.COM.port")
 
+        type ServerMsg =
+            | SaveXlsToXlsx of filePaths: string list
 
+        [<RequireQualifiedAccess>]
+        module Client =
+            let create(): Client<unit, ServerMsg> =
+                Client(CELL_SCRIPT_COM, COM_CLIENT, COM_SERVER, 0, Routed.port, Behaviors.ignore, ( fun args -> {args with ``akka.loggers`` = Loggers (Set.ofList [Logger.NLog])}))
 
-
+        [<RequireQualifiedAccess>]
+        module Server =
+            let create receive: Server<unit, ServerMsg> =
+                Server(CELL_SCRIPT_COM, COM_SERVER, COM_CLIENT, Routed.port, Routed.port, ( fun args -> {args with ``akka.loggers`` = Loggers (Set.ofList [Logger.NLog])}), receive)
 

@@ -1,6 +1,5 @@
 namespace CellScript.Core
 
-open Types
 
 [<RequireQualifiedAccess>]
 type ExcelVector =
@@ -35,9 +34,4 @@ with
 
         result
    
-
-[<RequireQualifiedAccess>]
-module ExcelSeries =
-    let row values = ExcelVector.Row values
-    let column values = ExcelVector.Column values
 

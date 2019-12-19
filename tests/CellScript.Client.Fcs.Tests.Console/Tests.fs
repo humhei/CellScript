@@ -10,6 +10,7 @@ open CellScript.Client.Core
 open CellScript.Client.Desktop
 open System.Threading
 open CellScript.Core
+open CellScript.Core.Extensions
 
 let dir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)
 
@@ -24,7 +25,7 @@ let equalByResponse expected response =
 let logger = NLog.FSharp.Logger(LogManager.GetCurrentClassLogger())
 
 let createClient<'Msg>() =
-    let client = NetCoreClient.create<'Msg> 9060
+    let client = NetCoreClient.create<'Msg> Route.port id
     Thread.Sleep(2000)
     client
 
@@ -49,7 +50,7 @@ let commandTests =
         testCase "invoker edit code" (fun _ ->
 
             let commandCaller = 
-                SerializableExcelReference.createByFile "B3" "Script" book1
+                ExcelRangeContactInfo.readFromFile (RangeGettingArg.RangeIndexer "B3") (SheetGettingArg.SheetName "Script") book1
                 |> CommandCaller
 
             let response: Result<obj, string> =
@@ -65,12 +66,12 @@ let commandTests =
 
 
 let evalTests =
-    let test (buildExpected: SerializableExcelReference -> obj[,]) inputIndexer codeIndexer =
+    let test (buildExpected: ExcelRangeContactInfo -> obj[,]) inputIndexer codeIndexer =
         let actor = client.RemoteServer
 
-        let input = SerializableExcelReference.createByFile inputIndexer "Script" book1
+        let input = ExcelRangeContactInfo.readFromFile (RangeGettingArg.RangeIndexer inputIndexer) (SheetGettingArg.SheetName "Script") book1
         let expected = buildExpected input
-        let code = SerializableExcelReference.createByFile codeIndexer "Script" book1
+        let code = ExcelRangeContactInfo.readFromFile (RangeGettingArg.RangeIndexer codeIndexer) (SheetGettingArg.SheetName "Script") book1
 
         let response =
             client.InvokeFunction (FcsMsg.Eval (input, string code.Content.[0,0]))
@@ -82,7 +83,7 @@ let evalTests =
         )
 
     let testSingleton (buildExpected: obj -> 'b) inputIndexer codeIndexer =
-        let buildExpected (xlRef: SerializableExcelReference) =
+        let buildExpected (xlRef: ExcelRangeContactInfo) =
             let input = xlRef.Content.[0,0]
             let result = buildExpected input
             array2D [[box result]]
@@ -107,5 +108,4 @@ let evalTests =
                 xlRef.Content
             ) "B8:D10" "B12"
         )
-    
     ]

@@ -20,7 +20,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\..\..\FCSWatch\src\FcsWatch.Binary\FcsWatch.Binary.fsproj" />
-    <ProjectReference Include="..\FcsWatch.AutoReload.Core\FcsWatch.AutoReload.Core.fsproj" />
+    <ProjectReference Include="..\FcsWatch.AutoReload.ExcelDna.Core\FcsWatch.AutoReload.ExcelDna.Core.fsproj" />
   </ItemGroup>
 
 

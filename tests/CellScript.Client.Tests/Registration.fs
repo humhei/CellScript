@@ -8,7 +8,7 @@ open CellScript.Core.Tests
 open NLog
 
 let logger = NLog.FSharp.Logger(LogManager.GetCurrentClassLogger())
-let client = NetCoreClient.create<OuterMsg> 9050 
+let client = NetCoreClient.create<OuterMsg> 9050 (fun msg -> msg)
 let apiLambdas = NetCoreClient.apiLambdas logger client
 let excelFunctions() =
     Registration.excelFunctions apiLambdas

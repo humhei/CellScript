@@ -1,4 +1,6 @@
 ﻿namespace CellScript.Client.Core
+open Shrimp.Akkling.Cluster.Intergraction.Configuration
+open Shrimp.Akkling.Cluster.Intergraction
 open System.Reflection
 open Fake.Core
 open System.Linq.Expressions
@@ -18,6 +20,7 @@ open System.Collections.Generic
 open System.Diagnostics
 open System.IO
 
+
 [<RequireQualifiedAccess>]
 type ApiLambda =
     | Function of LambdaExpression
@@ -35,11 +38,14 @@ module ApiLambda =
 
 [<RequireQualifiedAccess>]
 type EndPointClientMsg =
-    | UpdateCellValues of xlRefs: SerializableExcelReference list
+    | UpdateCellValues of xlRefs: ExcelRangeContactInfo list
+    | SetRowHeight of xlRef: ExcelRangeContactInfo * height: float
+
 
 type NetCoreClient<'Msg> = 
     { Value: Client<'Msg> 
-      GetCaller: unit -> CommandCaller }
+      GetCaller: unit -> CommandCaller
+      MsgMapping: 'Msg -> 'Msg }
 with 
 
     member x.RemoteServer = 
@@ -50,12 +56,19 @@ with
     /// internal helper function
     member x.InvokeFunction (message): Async<obj[,]> = 
         async {     
+            let message = x.MsgMapping message
             let! (result: Result<obj , string>) = x.RemoteServer.Ask (message,x.Value.MaxAskTime)
             let result: obj[,] = 
                 match result with 
                 | Result.Ok response -> 
                     let itoArray2D: IToArray2D = unbox response
                     itoArray2D.ToArray2D()
+                    |> Array2D.map (fun v ->
+                        match v with 
+                        | null -> box ""
+                        | :? DateTime as time -> box (time.ToString())
+                        | _ -> v
+                    )
 
                 | Result.Error errorMsg ->
                     let errorMsg = array2D [[box errorMsg]]
@@ -65,8 +78,13 @@ with
 
         } 
 
+    member x.InvokeFunctionSync (message) =
+        x.InvokeFunction message
+        |> Async.RunSynchronously
+
     member x.InvokeCommand (message) = 
         async {
+            let message = x.MsgMapping message
             match! x.RemoteServer.Ask(message, x.Value.MaxAskTime) with
             | Result.Ok (_: obj) -> x.Logger.Info (sprintf "Invoke command %A succesfully" message)
             | Result.Error error -> x.Logger.Error (sprintf "Erros when invoke command %A: %s" message error)
@@ -78,6 +96,32 @@ with
 [<RequireQualifiedAccess>]
 module NetCoreClient =   
 
+    type private LambdaExpressionStatic =
+        static member ofFun(v: Expression<Func<'T1,'T2>>) =
+            v :> LambdaExpression
+
+    let normalTypesparamConversions =
+        let arrayConversion convert =
+
+            LambdaExpressionStatic.ofFun 
+                (fun (input: obj[]) ->
+                    Array.map (string >> convert) input
+                )  
+        let listConversion convert =
+            LambdaExpressionStatic.ofFun 
+                (fun (input: obj[]) ->
+                    Array.map (string >> convert) input
+                    |> List.ofArray
+                )  
+        let arrayAndListConversions convert =
+            [ arrayConversion convert 
+              listConversion convert ]
+
+        [ arrayAndListConversions id
+          arrayAndListConversions (Int32.Parse)
+          arrayAndListConversions (Double.Parse)
+        ] 
+        |> List.concat
 
     [<AutoOpen>]
     module InternalExprHelper =
@@ -183,6 +227,7 @@ module NetCoreClient =
 
         let private tryGetConvertMethod =
             let convertParamTypeCache = new ConcurrentDictionary<Type, MethodInfo option>()
+
             fun (tp: Type) ->
                 convertParamTypeCache.GetOrAdd(tp, fun _ ->
                     let method = 
@@ -195,6 +240,7 @@ module NetCoreClient =
             tryGetConvertMethod tp |> Option.map (fun method ->
                 method.GetParameters().[0].ParameterType
             )
+
 
         let private convertParam (lambda: Expr) =
 
@@ -230,6 +276,16 @@ module NetCoreClient =
 
             loop Map.empty lambda
 
+        let private hasUciImplementAttribute (attributeType: Type) (uci: UnionCaseInfo) =
+            let method = 
+                uci.DeclaringType.GetMethods()
+                |> Array.find (fun methodInfo -> methodInfo.Name = "New" + uci.Name)
+
+            method.CustomAttributes 
+            |> Seq.exists (fun attr -> 
+                attr.AttributeType = attributeType)
+            
+
         let private (|InnerMsg|FunctionParams|Command|Event|) (uci: UnionCaseInfo) =
                 let method = 
                     uci.DeclaringType.GetMethods()
@@ -248,12 +304,14 @@ module NetCoreClient =
                         Event
 
                     else
-                        method.CustomAttributes
-                        |> Seq.tryFind (fun attr -> attr.AttributeType = typeof<SubMsgAttribute>)
-                        |> function
+                        if hasUciImplementAttribute typeof<SubMsgAttribute> uci
+                            || hasUciImplementAttribute typeof<NameInheritedSubMsgAttribute> uci 
+                        then 
+                            InnerMsg paramType
+                        else
+                            FunctionParams (parameters)
 
-                            | Some _ -> InnerMsg (paramType)
-                            | None -> FunctionParams (parameters)
+
 
                 | [||] -> failwithf "at least one parameter should be defined in method %s when registered as a function" method.Name 
                 | _ -> FunctionParams (parameters)
@@ -263,6 +321,7 @@ module NetCoreClient =
         let ofUci (log: NLog.FSharp.Logger) (commandSettings: IDictionary<UnionCaseInfo, CommandSetting>) (client: NetCoreClient<'Msg>) (uci: UnionCaseInfo) =
             let clientValue = Expr.Value client
             let callMethodInfo = typeof<NetCoreClient<'Msg>>.GetMethod("InvokeFunction",BindingFlags.Instance ||| BindingFlags.Public)
+            let callMethodSyncInfo = typeof<NetCoreClient<'Msg>>.GetMethod("InvokeFunctionSync",BindingFlags.Instance ||| BindingFlags.Public)
             let actionMethodInfo = typeof<NetCoreClient<'Msg>>.GetMethod("InvokeCommand",BindingFlags.Instance ||| BindingFlags.Public)
 
             let commandCallerApp =
@@ -305,10 +364,20 @@ module NetCoreClient =
                     let methodCall = LeafExpressionConverter.QuotationToExpression lambda :?> MethodCallExpression
 
                     let lambdaName = 
-                        if uciAccum.Length > 1 then 
-                            let head = uciAccum.Head
-                            head.DeclaringType.Name + "." + uci.Name
-                        else uci.Name
+                        match uciAccum with 
+                        | [uci] -> uci.Name
+                        | m :: n :: _ ->
+                            if hasUciImplementAttribute typeof<NameInheritedSubMsgAttribute> n then 
+                                n.Name + "." + m.Name
+                            else 
+                                let declaringTypeNameWithoutEndingWithMsg = 
+                                    let declaringTypeName = m.DeclaringType.Name
+                                    if declaringTypeName.EndsWith("Msg",StringComparison.OrdinalIgnoreCase) then 
+                                        declaringTypeName.Substring(0, declaringTypeName.Length - 3)
+                                    else declaringTypeName
+                                declaringTypeNameWithoutEndingWithMsg + "." + m.Name
+
+                        | _ -> failwith "Uci accum is empty"
 
                     flattenParamtersWithName lambdaName methodCall
 
@@ -318,11 +387,15 @@ module NetCoreClient =
                     |> Array.collect (fun uci -> loop (uci :: uciAccum) uci)
 
                 | FunctionParams (parameters) ->
-                    let csharLambda = 
-                        createLambda callMethodInfo parameters
-                        |> toCSharpLambda
+                    let csharpLambda = 
+                        if Array.exists (fun (param: ParameterInfo) -> param.ParameterType = typeof<ExcelRangeContactInfo>) parameters then
+                            createLambda callMethodSyncInfo parameters
+                            |> toCSharpLambda
+                        else 
+                            createLambda callMethodInfo parameters
+                            |> toCSharpLambda
 
-                    [| ApiLambda.Function csharLambda |]
+                    [| ApiLambda.Function csharpLambda |]
 
                 | Command (_, parameter) ->
 
@@ -378,9 +451,9 @@ module NetCoreClient =
             |> Array.collect (ApiLambda.ofUci log commandSettings client)
         else failwithf "type %s is not an union type" tp.FullName
 
-    let create seedPort getCaller processCustomMsg = 
+    let create seedPort getCommandCaller processCustomMsg msgMapping = 
         let client = 
-            Client.createAgent seedPort (fun logger msg ->
+            Client.create seedPort (fun logger msg ->
                 match msg with 
                 | ClientCallbackMsg.Exec (toolName, args, workingDir) ->
                     let tool = 
@@ -413,7 +486,11 @@ module NetCoreClient =
 
                 | ClientCallbackMsg.UpdateCellValues xlRefs ->
                     processCustomMsg logger (EndPointClientMsg.UpdateCellValues xlRefs)
+                | ClientCallbackMsg.SetRowHeight (xlRef, height) ->
+                    processCustomMsg logger (EndPointClientMsg.SetRowHeight (xlRef,height))
+
             )
 
         { Value = client 
-          GetCaller = getCaller }
+          GetCaller = getCommandCaller
+          MsgMapping = msgMapping }

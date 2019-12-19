@@ -17,13 +17,14 @@
     <None Include="CellScript.Client.Tests-AddIn.dna" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="NLog.Config" Version="4.6.2" />
+    <PackageReference Include="NLog.Config" Version="4.6.7" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Update="FSharp.Core" Version="4.6.2" />
+    <PackageReference Update="FSharp.Core" Version="4.7.0" />
+    <PackageReference Update="System.ValueTuple" Version="4.5.0" />
   </ItemGroup>
-  <!--<Import Project="..\..\paket-files\client\github.com\humhei\AddIn_Package_Updated\ExcelDna.AddIn\tools\ExcelDna.AddIn.targets" />
+  <Import Project="..\..\paket-files\client\github.com\humhei\AddIn_Package_Updated\ExcelDna.AddIn\tools\ExcelDna.AddIn.targets" />
   <Target Name="PostBuild" AfterTargets="PostBuildEvent">
     <Exec Command="copy &quot;$(TargetPath).config&quot; &quot;$(TargetDir)$(TargetName)-AddIn64.xll.config&quot; /Y&#xD;&#xA;copy &quot;$(TargetPath).config&quot; &quot;$(TargetDir)$(TargetName)-AddIn64-packed.xll.config&quot; /Y" />
-  </Target>-->
+  </Target>
 </Project>

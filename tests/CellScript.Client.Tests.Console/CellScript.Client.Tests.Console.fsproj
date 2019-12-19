@@ -16,8 +16,8 @@
 
   <ItemGroup>
     <PackageReference Include="Expecto" Version="8.10.1" />
-    <PackageReference Include="Fake.IO.FileSystem" Version="5.12.6" />
-    <PackageReference Include="NLog.Config" Version="4.6.3" />
+    <PackageReference Include="Fake.IO.FileSystem" Version="5.16.1" />
+    <PackageReference Include="NLog.Config" Version="4.6.7" />
   </ItemGroup>
 
   <ItemGroup>
@@ -26,7 +26,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Update="FSharp.Core" Version="4.6.2" />
+    <PackageReference Update="FSharp.Core" Version="4.7.0" />
+    <PackageReference Update="System.ValueTuple" Version="4.5.0" />
   </ItemGroup>
 
   <ItemGroup>

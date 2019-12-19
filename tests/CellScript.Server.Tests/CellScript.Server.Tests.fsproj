@@ -7,6 +7,7 @@
 
   <ItemGroup>
     <PackageReference Include="Argu" Version="5.2.0" />
+    <PackageReference Include="Fake.IO.FileSystem" Version="5.16.1" />
     <PackageReference Include="Microsoft.AspNetCore.Hosting.WindowsServices" Version="2.2.0" />
     <PackageReference Include="Microsoft.AspNetCore.Http.Abstractions" Version="2.2.0" />
     <PackageReference Include="Microsoft.AspNetCore.HttpsPolicy" Version="2.2.0" />
@@ -19,12 +20,11 @@
     <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="2.2.0" />
     <PackageReference Include="TaskBuilder.fs" Version="2.1.0" />
     <PackageReference Include="Giraffe" Version="3.6.0" />
-    <PackageReference Update="FSharp.Core" Version="4.6.2" />
+    <PackageReference Update="FSharp.Core" Version="4.7.0" />
 
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="Script.fsx" />
     <Compile Include="RemoteServer.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>

@@ -14,7 +14,7 @@ open CellScript.Core
 
 let logger = NLog.FSharp.Logger(LogManager.GetCurrentClassLogger())
 
-let client = NetCoreClient.create<FcsMsg> 9060
+let client = NetCoreClient.create<FcsMsg> Route.port id
 let apiLambdas = NetCoreClient.apiLambdas logger client
 
 let excelFunctions() =
@@ -49,7 +49,7 @@ let installPlugin() =
         let sheet = workbook.ActiveSheet :?> Worksheet
 
         { WorkbookPath = workbook.Path 
-          WorksheetName = sheet.Name }
+          SheetName = sheet.Name }
         |> CellScriptEvent
 
     app.add_WorkbookOpen(fun workbook ->

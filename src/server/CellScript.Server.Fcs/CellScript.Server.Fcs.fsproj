@@ -15,11 +15,9 @@
 
   <ItemGroup>
     <PackageReference Include="Argu" Version="5.2.0" />
-    <PackageReference Include="Fake.Core.Process" Version="5.13.2" />
-    <PackageReference Include="Fake.IO.FileSystem" Version="5.13.2" />
-    <PackageReference Include="FSharp.Compiler.Service" Version="27.0.1" />
+
     <PackageReference Include="Giraffe" Version="3.6.0" />
-    <PackageReference Include="Newtonsoft.Json" Version="12.0.2" />
+
     <PackageReference Include="TaskBuilder.fs" Version="2.1.0" />
     <PackageReference Update="FSharp.Core" Version="4.6.2" />
 
@@ -37,9 +35,6 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Include="Packages.fsx.lock" />
-    <Compile Include="Compiler.fs" />
-    <Compile Include="Watcher.fs" />
-    <Compile Include="RemoteServer.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 
@@ -50,9 +45,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\..\..\Akka.Persistence.LiteDB.FSharp\src\Akka.Persistence.LiteDB.FSharp\Akka.Persistence.LiteDB.FSharp.fsproj" />
     <ProjectReference Include="..\CellScript.Core.Fcs\CellScript.Core.Fcs.fsproj" />
-    <ProjectReference Include="..\CellScript.Server.Core\CellScript.Server.Core.fsproj" />
+    <ProjectReference Include="..\CellScript.Server.Fcs.Library\CellScript.Server.Fcs.Library.fsproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -1,0 +1,5 @@
+dotnet nuget push -s http://127.0.0.1:4000/v3/index.json "D:\VsCode\Github\CellScript\src\client\CellScript.Client.Core\bin\Debug\CellScript.Client.Core.0.1.34.nupkg"
+dotnet nuget push -s http://127.0.0.1:4000/v3/index.json "D:\VsCode\Github\CellScript\src\client\CellScript.Client.Desktop\bin\Debug\CellScript.Client.Desktop.0.1.34.nupkg"
+dotnet nuget push -s http://127.0.0.1:4000/v3/index.json "D:\VsCode\Github\CellScript\src\server\CellScript.Core\bin\Debug\CellScript.Core.0.1.34.nupkg"
+dotnet nuget push -s http://127.0.0.1:4000/v3/index.json "D:\VsCode\Github\CellScript\src\server\CellScript.Core.Fcs\bin\Debug\CellScript.Core.Fcs.0.1.34.nupkg"
+dotnet nuget push -s http://127.0.0.1:4000/v3/index.json "D:\VsCode\Github\CellScript\src\server\CellScript.Server.Fcs.Library\bin\Debug\CellScript.Server.Fcs.Library.0.1.34.nupkg"

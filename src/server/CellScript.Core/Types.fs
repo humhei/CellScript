@@ -56,6 +56,8 @@ module Types =
         let cellAddress (xlRef: ExcelRangeContactInfo) = xlRef.CellAddress
 
         let readFromFile (rangeGettingArg: RangeGettingArg) (sheetGettingArg: SheetGettingArg) workbookPath =
+            if not <| File.Exists workbookPath then failwithf "File %s not exists" workbookPath
+
             use excelPackage = new ExcelPackage(FileInfo(workbookPath))
             let sheet = excelPackage.GetWorkSheet sheetGettingArg
             use range = sheet.GetRange(rangeGettingArg)

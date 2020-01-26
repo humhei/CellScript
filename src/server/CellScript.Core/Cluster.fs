@@ -37,17 +37,19 @@ module Cluster =
 
         [<RequireQualifiedAccess>]
         module private Routed =
-            let port = referenceConfig.Value.GetInt("CellScript.Core.Cluster.Major.port")
+            let port = 
+                lazy
+                    referenceConfig.Value.GetInt("CellScript.Core.Cluster.Major.port")
 
         [<RequireQualifiedAccess>]
         module Client =
             let create callback: Client<CallbackMsg, 'ServerMsg> =
-                Client(CELL_SCRIPT_CLUSETER, CLIENT, SERVER, 0, Routed.port, callback, ( fun args -> {args with ``akka.loggers`` = Loggers (Set.ofList [Logger.NLog])}))
+                Client(CELL_SCRIPT_CLUSETER, CLIENT, SERVER, 0, Routed.port.Value, callback, ( fun args -> {args with ``akka.loggers`` = Loggers (Set.ofList [Logger.NLog])}))
 
         [<RequireQualifiedAccess>]
         module Server =
             let create receive =
-                Server(CELL_SCRIPT_CLUSETER, SERVER, CLIENT, Routed.port, Routed.port, ( fun args -> {args with ``akka.loggers`` = Loggers (Set.ofList [Logger.NLog])}), receive)
+                Server(CELL_SCRIPT_CLUSETER, SERVER, CLIENT, Routed.port.Value, Routed.port.Value, ( fun args -> {args with ``akka.loggers`` = Loggers (Set.ofList [Logger.NLog])}), receive)
             
 
     [<RequireQualifiedAccess>]
@@ -58,7 +60,9 @@ module Cluster =
 
         [<RequireQualifiedAccess>]
         module private Routed =
-            let port = referenceConfig.Value.GetInt("CellScript.Core.Cluster.COM.port")
+            let port = 
+                lazy
+                    referenceConfig.Value.GetInt("CellScript.Core.Cluster.COM.port")
 
         type ServerMsg =
             | SaveXlsToXlsx of filePaths: string list
@@ -66,10 +70,10 @@ module Cluster =
         [<RequireQualifiedAccess>]
         module Client =
             let create(): Client<unit, ServerMsg> =
-                Client(CELL_SCRIPT_COM, COM_CLIENT, COM_SERVER, 0, Routed.port, Behaviors.ignore, ( fun args -> {args with ``akka.loggers`` = Loggers (Set.ofList [Logger.NLog])}))
+                Client(CELL_SCRIPT_COM, COM_CLIENT, COM_SERVER, 0, Routed.port.Value, Behaviors.ignore, ( fun args -> {args with ``akka.loggers`` = Loggers (Set.ofList [Logger.NLog])}))
 
         [<RequireQualifiedAccess>]
         module Server =
             let create receive: Server<unit, ServerMsg> =
-                Server(CELL_SCRIPT_COM, COM_SERVER, COM_CLIENT, Routed.port, Routed.port, ( fun args -> {args with ``akka.loggers`` = Loggers (Set.ofList [Logger.NLog])}), receive)
+                Server(CELL_SCRIPT_COM, COM_SERVER, COM_CLIENT, Routed.port.Value, Routed.port.Value, ( fun args -> {args with ``akka.loggers`` = Loggers (Set.ofList [Logger.NLog])}), receive)
 

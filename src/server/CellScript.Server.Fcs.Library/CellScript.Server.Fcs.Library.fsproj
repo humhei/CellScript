@@ -13,7 +13,7 @@
 
   <ItemGroup>
     <PackageReference Include="Fake.Core.Process" Version="5.13.2" />
-    <PackageReference Include="Fake.IO.FileSystem" Version="5.13.2" />
+    <PackageReference Include="Fake.IO.FileSystem" Version="5.16.1" />
     <PackageReference Include="FSharp.Compiler.Service" Version="27.0.1" />
     <PackageReference Include="LiteDB.FSharp" Version="2.10.1" />
     <PackageReference Include="Newtonsoft.Json" Version="12.0.2" />

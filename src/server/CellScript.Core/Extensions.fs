@@ -7,6 +7,15 @@ open System.IO
 open System.Collections.Generic
 open System.Runtime.CompilerServices
 
+type RangeGettingOptions =
+    | RangeIndexer of string
+    | UserRange
+
+type SheetGettingOptions =
+    | SheetName of string
+    | SheetIndex of int
+    | SheetNameOrSheetIndex of sheetName: string * index: int
+
 module  Extensions =
 
     [<RequireQualifiedAccess>]
@@ -76,9 +85,7 @@ module  Extensions =
             x.LoadFromArrays(baseArray)
 
 
-    type RangeGettingArg =
-        | RangeIndexer of string
-        | UserRange
+
 
     type ExcelWorksheet with
         member sheet.GetRange arg = 
@@ -90,17 +97,14 @@ module  Extensions =
                 let indexer = sheet.Dimension.Start.Address + ":" + sheet.Dimension.End.Address
                 sheet.Cells.[indexer]
 
-    type SheetGettingArg =
-        | SheetName of string
-        | SheetIndex of int
-        | SheetNameOrSheetIndex of sheetName: string * index: int
+
 
     type ExcelPackage with
         member excelPackage.GetWorkSheet(arg) =
             match arg with 
-            | SheetGettingArg.SheetName sheetName -> excelPackage.Workbook.Worksheets.[sheetName]
-            | SheetGettingArg.SheetIndex index -> excelPackage.Workbook.Worksheets.[index]
-            | SheetGettingArg.SheetNameOrSheetIndex (sheetName, index) ->
+            | SheetGettingOptions.SheetName sheetName -> excelPackage.Workbook.Worksheets.[sheetName]
+            | SheetGettingOptions.SheetIndex index -> excelPackage.Workbook.Worksheets.[index]
+            | SheetGettingOptions.SheetNameOrSheetIndex (sheetName, index) ->
                 match Seq.tryFind (fun (worksheet: ExcelWorksheet) -> worksheet.Name = sheetName) excelPackage.Workbook.Worksheets with 
                 | Some worksheet -> worksheet
                 | None -> excelPackage.Workbook.Worksheets.[index]

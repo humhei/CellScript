@@ -1,7 +1,6 @@
 namespace CellScript.Core
 open Deedle
 open CellScript.Core.Extensions
-open Types
 open Akka.Util
 open System
 

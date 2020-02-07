@@ -1,7 +1,6 @@
 ﻿namespace CellScript.Core
 open Akkling
 open Akka.Event
-open CellScript.Core.Types
 open Shrimp.Akkling.Cluster.Intergraction
 open Akka.Configuration
 open Shrimp.Akkling.Cluster.Intergraction.Configuration

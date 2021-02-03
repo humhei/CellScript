@@ -7,16 +7,21 @@ open Shrimp.FSharp.Plus
 
 /// Ignore case
 [<CustomEquality; CustomComparison>]
-type TableHeader = TableHeader of string
+type KeyIC = KeyIC of string
 with 
-    member x.ValueLC =
-        let (TableHeader v) = x
+
+    member x.LowerValue =
+        let (KeyIC v) = x
         v.ToLower()
+
+    override x.ToString() =
+        let (KeyIC v) = x
+        v
 
     override x.Equals(yobj) =  
        match yobj with 
-       | :? TableHeader as y -> 
-            x.ValueLC = y.ValueLC
+       | :? KeyIC as y -> 
+            x.LowerValue = y.LowerValue
        | _ -> false 
     override x.GetHashCode() = x.LowerValue.GetHashCode()
 
@@ -24,11 +29,11 @@ with
        member x.CompareTo yobj =  
 
          match yobj with 
-         | :? TableHeader as y -> compare x.LowerValue y.LowerValue
+         | :? KeyIC as y -> compare x.LowerValue y.LowerValue
          | _ -> invalidArg "yobj" "cannot compare value of different types" 
 
 
-type Table = private Table of ExcelFrame<int, TableHeader>
+type Table = private Table of ExcelFrame<int, KeyIC>
 with 
     member internal x.AsExcelFrame = 
         let (Table frame) = x
@@ -45,24 +50,18 @@ with
     member x.Headers =
         x.AsFrame.ColumnKeys
 
-    member x.GetHeadersLC() =
-        x.AsFrame.ColumnKeys
-        |> Seq.map (fun m -> m.ToLower())
-
-    member table.ConvertHeadersToLC() =
-        table.MapFrame (fun frame ->
-            let originColumnKeys = frame.ColumnKeys |> List.ofSeq
-            let lowerColumnkeys = originColumnKeys |> List.map (fun m -> m.ToLower())
-            Frame.indexColsWith lowerColumnkeys frame
-        )
-
     member x.ToArray2D() =
         ExcelFrame.toArray2DWithHeader x.AsExcelFrame
 
     member x.GetColumns (indexes: seq<string>)  =
+
+        let indexes =
+            indexes
+            |> Seq.map KeyIC
+
         let mapping =
             Frame.filterCols (fun key _ ->
-                Seq.exists (fun m -> String.Compare(m, key, true) = 0) indexes
+                Seq.exists (fun index -> key = index) indexes
             )
 
         x.MapFrame mapping 
@@ -77,10 +76,13 @@ with
 
     static member OfArray2D array2D =
         let frame = ExcelFrame.ofArray2DWithHeader array2D
-        Table frame
+        frame
+        |> ExcelFrame.mapFrame(Frame.mapColKeys KeyIC)
+        |> Table
 
     static member OfRecords records =
         ExcelFrame.ofRecords records
+        |> ExcelFrame.mapFrame(Frame.mapColKeys KeyIC)
         |> Table
 
 
@@ -99,33 +101,16 @@ module Table =
         ExcelFrame.mapFrame mapping table.AsExcelFrame
         |> Table
 
-
-
-    let convertHeadersToLC (table: Table) =
-        table.ConvertHeadersToLC()
-        
-
-    /// mapping frame using lower case headers
-    let mapFrameUsingLC mapping table =
-        mapFrame (fun frame ->
-            let originColumnKeys = frame.ColumnKeys |> List.ofSeq
-            let lowerColumnkeys = originColumnKeys |> List.map (fun m -> m.ToLower())
-            Frame.indexColsWith lowerColumnkeys frame
-            |> mapping
-            |> Frame.mapColKeys(fun key ->
-                originColumnKeys
-                |> List.tryFind (fun m -> String.Compare(m, key, true) = 0)
-                |> function
-                    | Some key -> key
-                    | None -> key
-            )
-        ) table
-
     let fillEmptyUp (table: Table) =
         table 
         |> mapFrame Frame.fillEmptyUp
 
     let splitRowToMany addtionalHeaders mapping (table: Table) =
+
+        let addtionalHeaders =
+            addtionalHeaders
+            |> List.map KeyIC
+
         table 
         |> mapFrame (Frame.splitRowToMany addtionalHeaders mapping)
 
@@ -145,7 +130,6 @@ module Table =
     let getColumns (indexes: seq<string>) (table: Table) =
         table.GetColumns(indexes)
 
-
     let toExcelArray (Table excelFrame) =
         excelFrame
         |> ExcelFrame.mapFrame (fun frame ->
@@ -158,27 +142,33 @@ module Table =
 
     let concat (tables: AtLeastOneList<Table>) =
 
-        let headerListsLower =
+        let headerLists =
             tables.AsList
             |> List.map (fun m ->
-                m.GetHeadersLC()
+                m.Headers
                 |> Set.ofSeq
             )
 
-        headerListsLower
+        headerLists
         |> List.reduce(fun headers1 headers2 -> 
             if headers1 <> headers2 then failwithf "headers1 %A <> headers2 %A when concating table" headers1 headers2
             else headers2
         )
         |> ignore
 
-        let rows =
-            tables.AsList
-            |> List.collect (fun table ->
-                table.AsFrame.Rows.Values
-                |> List.ofSeq
-                |> List.map (fun row -> row)
-            )
+        tables.Header
+        |> mapFrame(fun _ ->
+            let rows =
+                tables.AsList
+                |> List.collect (fun table ->
+                    table.AsFrame.Rows.Values
+                    |> List.ofSeq
+                )
 
-        Frame.ofRowsOrdinal rows
-        |> Frame.mapRowKeys int
+            Frame.ofRowsOrdinal rows
+            |> Frame.mapRowKeys int
+        )
+
+
+
+

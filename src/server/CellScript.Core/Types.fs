@@ -167,7 +167,7 @@ module Types =
     
         let toArray2DWithHeader (ExcelFrame frame) =
     
-            let header = frame.ColumnKeys |> Seq.map box
+            let header = frame.ColumnKeys |> Seq.map (fun m -> box(m.ToString()))
     
             let contents = frame.ToArray2D(null) |> Array2D.toSeqs
             let result =

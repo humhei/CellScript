@@ -84,7 +84,7 @@ let udfTests =
             let excelRange = 
                 ExcelRangeContactInfo.readFromFile (RangeIndexer "A15:K76") (SheetName "Table") book1
 
-            let table = Table.Convert excelRange.Content
+            let table = Table.OfArray2D excelRange.Content
 
             let msg = OuterMsg.TestTable table
 

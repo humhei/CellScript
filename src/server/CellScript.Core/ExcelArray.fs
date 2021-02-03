@@ -3,10 +3,10 @@ open Deedle
 open CellScript.Core.Extensions
 open Akka.Util
 
-type ExcelArray = ExcelArray of ExcelFrame<int,int>
+type ExcelArray = private ExcelArray of ExcelFrame<int,int>
 with
 
-    member x.AsExcelFrame = 
+    member internal x.AsExcelFrame = 
         let (ExcelArray frame) = x
         frame
 

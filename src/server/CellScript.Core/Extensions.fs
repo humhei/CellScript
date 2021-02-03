@@ -7,47 +7,30 @@ open System.IO
 open System.Collections.Generic
 open System.Runtime.CompilerServices
 
-type RangeGettingOptions =
-    | RangeIndexer of string
-    | UserRange
 
-type SheetGettingOptions =
-    | SheetName of string
-    | SheetIndex of int
-    | SheetNameOrSheetIndex of sheetName: string * index: int
-
-module  Extensions =
+module Extensions =
 
     [<RequireQualifiedAccess>]
-    module internal String =
+    module CellValue =
 
-        let ofCharList chars = chars |> List.toArray |> String
+        let private isTextEmpty (v: obj) =
+            match v with
+            | :? string as v -> v = ""
+            | _ -> false
 
-        let equalIgnoreCase (text1: string) (text2: string) =
-            String.Equals(text1,text2,StringComparison.InvariantCultureIgnoreCase)
+        let private isEmpty (v: obj) =
+            isTextEmpty v
 
-    type internal String with 
-        member x.LeftOf(pattern: string) =
-            let index = x.IndexOf(pattern)
-            x.Substring(0,index)
+        let private isNotEmpty (v: obj) =
+            isEmpty v |> not
 
-        member x.RightOf(pattern: string) =
-            let index = x.IndexOf(pattern)
-            x.Substring(index + 1)
+        /// no missing or cell empty
+        let (|HasSense|NoSense|) (v: obj option) =
+            match v with
+            | Some value -> if isEmpty v then NoSense else HasSense value
+            | None -> NoSense
 
-            
 
-    [<RequireQualifiedAccess>]
-    module internal Type =
-
-        /// no inheritance
-        let tryGetAttribute<'Attribute> (tp: Type) =
-            tp.GetCustomAttributes(false)
-            |> Seq.tryFind (fun attr ->
-                let t1 =  attr.GetType()
-                let t2 =typeof<'Attribute>
-                t1 = t2
-            )
 
 
     [<RequireQualifiedAccess>]
@@ -60,6 +43,14 @@ module  Extensions =
                 for i = l1 to u1 do
                     yield input.[i,*] :> seq<'a>
             }
+
+        let toLists (input: 'a[,]) =
+            let l1 = input.GetLowerBound(0)
+            let u1 = input.GetUpperBound(0)
+            [
+                for i = l1 to u1 do
+                    yield List.ofArray input.[i,*] 
+            ]
 
         let transpose (input: 'a[,]) =
             let l1 = input.GetLowerBound(1)
@@ -78,35 +69,44 @@ module  Extensions =
             let mapping raw = mapping (raw.ToString())
             Frame.mapValues mapping frame
         
+        let internal fillEmptyUp frame =
+            Frame.mapColValues (fun column ->
+                column 
+                |> Series.mapAll (fun index value ->
+                    let rec searchValue index value =
+                        match value with 
+                        | CellValue.HasSense v -> Some v
+                        | _ -> 
+                            let newIndex = (index - 1)
+                            if Seq.contains newIndex column.Keys 
+                            then searchValue newIndex (Series.tryGet newIndex column)
+                            else value
+                    searchValue index value
+                )) frame
+
+
+        let internal splitRowToMany addtionalHeaders (mapping : 'R -> ObjectSeries<_> -> seq<seq<obj>>)  (frame: Frame<'R,'C>) =
+            let headers = 
+                let keys = frame.ColumnKeys
+                Seq.append keys addtionalHeaders
+
+            let values = 
+                frame.Rows.Values
+                |> Seq.mapi (fun i value -> mapping (Seq.item i frame.RowKeys) value)
+                |> Seq.concat
+                |> array2D
+
+            match values.Length with 
+            | 0 -> failwith "Cannot split row to many as current frame is empty"
+            | _ -> 
+                Frame.ofArray2D values
+                |> Frame.indexColsWith headers
+
 
     type ExcelRangeBase with
         member x.LoadFromArray2D(array2D: obj [,]) =
             let baseArray = Array2D.toSeqs array2D |> Seq.map Array.ofSeq
             x.LoadFromArrays(baseArray)
 
-
-
-
-    type ExcelWorksheet with
-        member sheet.GetRange arg = 
-            match arg with
-            | RangeIndexer indexer ->
-                sheet.Cells.[indexer]
-
-            | UserRange ->
-                let indexer = sheet.Dimension.Start.Address + ":" + sheet.Dimension.End.Address
-                sheet.Cells.[indexer]
-
-
-
-    type ExcelPackage with
-        member excelPackage.GetWorkSheet(arg) =
-            match arg with 
-            | SheetGettingOptions.SheetName sheetName -> excelPackage.Workbook.Worksheets.[sheetName]
-            | SheetGettingOptions.SheetIndex index -> excelPackage.Workbook.Worksheets.[index]
-            | SheetGettingOptions.SheetNameOrSheetIndex (sheetName, index) ->
-                match Seq.tryFind (fun (worksheet: ExcelWorksheet) -> worksheet.Name = sheetName) excelPackage.Workbook.Worksheets with 
-                | Some worksheet -> worksheet
-                | None -> excelPackage.Workbook.Worksheets.[index]
 
 

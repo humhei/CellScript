@@ -3,8 +3,8 @@ namespace CellScript.Core
 
 [<RequireQualifiedAccess>]
 type ExcelVector =
-    | Column of seq<obj>
-    | Row of seq<obj>
+    | Column of list<obj>
+    | Row of list<obj>
 
 with 
     member x.Value =
@@ -24,9 +24,9 @@ with
         let l2 = array2D.GetLength(1)
         let result =
             if l2 > 0 && l1 = 1 then
-                array2D.[0,*] |> Array.toSeq |> ExcelVector.Row
+                array2D.[0,*] |> List.ofArray |> ExcelVector.Row
             elif l1 > 0 && l2 = 1 then
-                array2D.[*,0] |> Array.toSeq |> ExcelVector.Column
+                array2D.[*,0] |> List.ofArray |> ExcelVector.Column
             elif l1 = 0 && l2 = 0 then
                 failwith "empty inputs"
             else 

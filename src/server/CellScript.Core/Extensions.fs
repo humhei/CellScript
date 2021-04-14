@@ -6,6 +6,12 @@ open Deedle.Internal
 open System.IO
 open System.Collections.Generic
 open System.Runtime.CompilerServices
+open Shrimp.FSharp.Plus
+
+
+[<AutoOpen>]
+module Constrants = 
+    let [<Literal>] SHEET1 = "Sheet1"
 
 
 module Extensions =
@@ -61,10 +67,114 @@ module Extensions =
             }
             |> array2D
 
-    
+ 
 
     [<RequireQualifiedAccess>]
     module Frame =
+        let Concat_RemoveRowKeys(frames: AtLeastOneList<Frame<_, _>>) =
+
+            match frames.AsList with 
+            | [ frame ] -> Frame.indexRowsOrdinally frame
+            | _ ->
+                let headerLists =
+                    frames.AsList
+                    |> List.map (fun m ->
+                        m.ColumnKeys
+                        |> Set.ofSeq
+                    )
+
+                headerLists
+                |> List.reduce(fun headers1 headers2 -> 
+                    if headers1 <> headers2 then failwithf "headers1 %A <> headers2 %A when concating table" headers1 headers2
+                    else headers2
+                )
+                |> ignore
+
+                let rows =
+
+                    let indexedColkeys =
+                        frames.Head.ColumnKeys
+                        |> List.ofSeq
+                        |> List.indexed
+                        |> List.map (fun (id ,colKey) ->
+                            colKey, (id, colKey)
+                        )
+                        |> dict
+
+                    frames.AsList
+                    |> List.collect (fun frame ->
+                        let frame =
+                            frame
+                            |> Frame.mapColKeys(fun colKey -> indexedColkeys.[colKey])
+                            |> Frame.sortColsByKey
+                            |> Frame.mapColKeys snd
+
+                        frame.Rows.Values
+                        |> List.ofSeq
+                    )
+
+                Frame.ofRowsOrdinal rows
+                |> Frame.indexRowsOrdinally
+
+
+
+        let Concat_KeepRowKeys(frames: AtLeastOneList<Frame<_, _>>) =
+            match frames.AsList with
+            | [frame] -> frame
+            | _ ->
+                let headerLists =
+                    frames.AsList
+                    |> List.map (fun m ->
+                        m.ColumnKeys
+                        |> Set.ofSeq
+                    )
+
+                headerLists
+                |> List.reduce(fun headers1 headers2 -> 
+                    if headers1 <> headers2 then failwithf "headers1 %A <> headers2 %A when concating table" headers1 headers2
+                    else headers2
+                )
+                |> ignore
+
+                let indexedColkeys =
+                    frames.Head.ColumnKeys
+                    |> List.ofSeq
+                    |> List.indexed
+                    |> List.map (fun (id ,colKey) ->
+                        colKey, (id, colKey)
+                    )
+                    |> dict
+
+                let rows =
+                    frames.AsList
+                    |> List.collect (fun frame ->
+
+                        let frame =
+                            frame
+                            |> Frame.mapColKeys(fun colKey -> indexedColkeys.[colKey])
+                            |> Frame.sortColsByKey
+                            |> Frame.mapColKeys snd
+
+
+                        frame.GetRows()
+                        |> Series.observations
+                        |> List.ofSeq
+                    )
+
+                Frame.ofRows rows
+
+        let chooseCols chooser (frame) =
+            frame
+            |> Frame.filterCols(fun colKey _ ->
+                match chooser colKey with 
+                | Some _ -> true
+                | None -> false
+            )
+            |> Frame.mapColKeys(fun colKey ->
+                (chooser colKey).Value
+            )
+
+
         let mapValuesString mapping frame =
             let mapping raw = mapping (raw.ToString())
             Frame.mapValues mapping frame

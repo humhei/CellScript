@@ -45,7 +45,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\CellScript.Core.Fcs\CellScript.Core.Fcs.fsproj" />
     <ProjectReference Include="..\CellScript.Server.Fcs.Library\CellScript.Server.Fcs.Library.fsproj" />
   </ItemGroup>
 

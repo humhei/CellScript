@@ -4,36 +4,12 @@ open CellScript.Core.Extensions
 open Akka.Util
 open System
 open Shrimp.FSharp.Plus
-
-/// Ignore case
-[<CustomEquality; CustomComparison>]
-type KeyIC = KeyIC of string
-with 
-
-    member x.LowerValue =
-        let (KeyIC v) = x
-        v.ToLower()
-
-    override x.ToString() =
-        let (KeyIC v) = x
-        v
-
-    override x.Equals(yobj) =  
-       match yobj with 
-       | :? KeyIC as y -> 
-            x.LowerValue = y.LowerValue
-       | _ -> false 
-    override x.GetHashCode() = x.LowerValue.GetHashCode()
-
-    interface System.IComparable with 
-       member x.CompareTo yobj =  
-
-         match yobj with 
-         | :? KeyIC as y -> compare x.LowerValue y.LowerValue
-         | _ -> invalidArg "yobj" "cannot compare value of different types" 
+open System.IO
+open OfficeOpenXml
+open Newtonsoft.Json
 
 
-type Table = private Table of ExcelFrame<int, KeyIC>
+type Table = private Table of ExcelFrame<stringIC>
 with 
     member internal x.AsExcelFrame = 
         let (Table frame) = x
@@ -43,7 +19,8 @@ with
         let (Table frame) = x
         frame.AsFrame
 
-    member private table.MapFrame(mapping) =
+
+    member table.MapFrame(mapping) =
         ExcelFrame.mapFrame mapping table.AsExcelFrame
         |> Table
 
@@ -53,11 +30,40 @@ with
     member x.ToArray2D() =
         ExcelFrame.toArray2DWithHeader x.AsExcelFrame
 
-    member x.GetColumns (indexes: seq<string>)  =
+    member x.SaveToXlsx(path: string, ?isOverride: bool, ?sheetName: string, ?columnAutofitOptions, ?tableName: string, ?tableStyle, ?customCellMapping: obj -> obj) =
+        let isOverride = defaultArg isOverride true
 
-        let indexes =
-            indexes
-            |> Seq.map KeyIC
+        let sheetName = defaultArg sheetName "Sheet1"
+
+        if isOverride
+        then File.Delete path
+
+
+        let excelPackage = new ExcelPackage(FileInfo(path))
+
+        let worksheet = 
+            excelPackage.Workbook.Worksheets.Add(sheetName)
+            |> VisibleExcelWorksheet.Create
+
+        let array2D =
+            let array2D =
+                x.ToArray2D()
+
+            match customCellMapping with 
+            | Some mapping ->
+                array2D
+                |> Array2D.map mapping
+
+            | None -> array2D
+
+        worksheet.LoadFromArraysAsTable(array2D, ?columnAutofitOptions = columnAutofitOptions, ?tableName = tableName, ?tableStyle = tableStyle)
+        
+        excelPackage.Save()
+        excelPackage.Dispose()
+
+
+
+    member x.GetColumns (indexes: seq<stringIC>)  =
 
         let mapping =
             Frame.filterCols (fun key _ ->
@@ -66,6 +72,41 @@ with
 
         x.MapFrame mapping 
 
+
+
+    static member OfArray2D array2D =
+        let frame = ExcelFrame.ofArray2DWithHeader array2D
+        frame
+        |> ExcelFrame.mapFrame(Frame.mapColKeys stringIC)
+        |> Table.Table
+
+    static member OfRecords records =
+        ExcelFrame.ofRecords records
+        |> ExcelFrame.mapFrame(Frame.mapColKeys stringIC)
+        |> Table.Table
+
+    static member OfFrame (frame: Frame<int, string>) =
+        frame
+        |> ExcelFrame.ofFrameWithHeaders 
+        |> ExcelFrame.mapFrame(Frame.mapColKeys stringIC)
+        |> Table.Table
+
+    static member OfFrame (frame: Frame<int, stringIC>) =
+        frame
+        |> Frame.mapColKeys stringIC.value
+        |> Table.OfFrame
+
+    static member OfXlsxFile(xlsxFile: XlsxFile, ?rangeGettingOptions, ?sheetGettingOptions) =
+        let rangeGettingOptions = 
+            defaultArg rangeGettingOptions RangeGettingOptions.UserRange
+
+        let sheetGettingOptions =
+            defaultArg sheetGettingOptions SheetGettingOptions.DefaultValue
+
+        let excelRangeInfo = ExcelRangeContactInfo.readFromFile rangeGettingOptions sheetGettingOptions xlsxFile
+        
+        Table.OfArray2D(excelRangeInfo.Content)
+
     interface IToArray2D with 
         member x.ToArray2D() =
             ExcelFrame.toArray2DWithHeader x.AsExcelFrame
@@ -73,18 +114,6 @@ with
     interface ISurrogated with 
         member x.ToSurrogate(system) = 
             TableSurrogate (x.ToArray2D()) :> ISurrogate
-
-    static member OfArray2D array2D =
-        let frame = ExcelFrame.ofArray2DWithHeader array2D
-        frame
-        |> ExcelFrame.mapFrame(Frame.mapColKeys KeyIC)
-        |> Table
-
-    static member OfRecords records =
-        ExcelFrame.ofRecords records
-        |> ExcelFrame.mapFrame(Frame.mapColKeys KeyIC)
-        |> Table
-
 
 
 and private TableSurrogate = TableSurrogate of obj[,]
@@ -98,18 +127,16 @@ with
 [<RequireQualifiedAccess>]
 module Table =
     let mapFrame mapping (table: Table) =
-        ExcelFrame.mapFrame mapping table.AsExcelFrame
-        |> Table
+        table.MapFrame mapping
 
     let fillEmptyUp (table: Table) =
         table 
         |> mapFrame Frame.fillEmptyUp
 
     let splitRowToMany addtionalHeaders mapping (table: Table) =
-
         let addtionalHeaders =
             addtionalHeaders
-            |> List.map KeyIC
+            |> List.map stringIC
 
         table 
         |> mapFrame (Frame.splitRowToMany addtionalHeaders mapping)
@@ -127,7 +154,7 @@ module Table =
             )
         )
 
-    let getColumns (indexes: seq<string>) (table: Table) =
+    let getColumns (indexes) (table: Table) =
         table.GetColumns(indexes)
 
     let toExcelArray (Table excelFrame) =
@@ -140,35 +167,13 @@ module Table =
         )
         |> ExcelArray
 
-    let concat (tables: AtLeastOneList<Table>) =
-
-        let headerLists =
-            tables.AsList
-            |> List.map (fun m ->
-                m.Headers
-                |> Set.ofSeq
-            )
-
-        headerLists
-        |> List.reduce(fun headers1 headers2 -> 
-            if headers1 <> headers2 then failwithf "headers1 %A <> headers2 %A when concating table" headers1 headers2
-            else headers2
-        )
-        |> ignore
-
-        tables.Header
+    let concat_RemoveRowKeys (tables: AtLeastOneList<Table>) =
+        tables.Head
         |> mapFrame(fun _ ->
-            let rows =
-                tables.AsList
-                |> List.collect (fun table ->
-                    table.AsFrame.Rows.Values
-                    |> List.ofSeq
-                )
-
-            Frame.ofRowsOrdinal rows
-            |> Frame.mapRowKeys int
+            tables
+            |> AtLeastOneList.map (fun table -> table.AsFrame)
+            |> Frame.Concat_RemoveRowKeys
         )
-
 
 
 

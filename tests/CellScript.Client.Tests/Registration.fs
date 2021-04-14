@@ -7,7 +7,6 @@ open CellScript.Client.Desktop
 open CellScript.Core.Tests
 open NLog
 
-let logger = NLog.FSharp.Logger(LogManager.GetCurrentClassLogger())
 let client = NetCoreClient.create<OuterMsg> 9050 (fun msg -> msg)
 let apiLambdas = NetCoreClient.apiLambdas logger client
 let excelFunctions() =
@@ -38,6 +37,7 @@ let installExcelFunctions() =
 type FsAsyncAddIn () =
     interface IExcelAddIn with
         member this.AutoOpen () =
+            ExcelAsyncUtil.Initialize()
             // appStation.Initial()
             installExcelFunctions()
 

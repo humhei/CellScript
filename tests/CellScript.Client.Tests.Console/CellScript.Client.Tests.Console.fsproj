@@ -21,7 +21,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\client\CellScript.Client.Desktop\CellScript.Client.Desktop.fsproj" />
     <ProjectReference Include="..\CellScript.Core.Tests\CellScript.Core.Tests.fsproj" />
   </ItemGroup>
 

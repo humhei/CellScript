@@ -4,6 +4,7 @@ open Extensions
 open System
 open OfficeOpenXml
 open System.IO
+open Shrimp.FSharp.Plus
 
 [<AutoOpen>]
 module Types = 
@@ -16,8 +17,30 @@ module Types =
         | RangeIndexer of string
         | UserRange
 
-    type ExcelWorksheet with
-        member sheet.GetRange options = 
+    [<RequireQualifiedAccess>]
+    type ColumnAutofitOptions =
+        | None
+        | AutoFit of minimumSize: float * maximumSize: float
+    with    
+        static member DefaultValue = ColumnAutofitOptions.AutoFit(10., 50.)
+
+
+
+    type SheetContentsEmptyException(error: string) =
+        inherit Exception(error)
+
+
+    type VisibleExcelWorksheet = private VisibleExcelWorksheet of ExcelWorksheet
+    with 
+        member x.Value =
+            let (VisibleExcelWorksheet v) = x
+            v
+
+        member x.Name = x.Value.Name
+
+        member x.GetRange options = 
+            let sheet = x.Value
+
             match options with
             | RangeIndexer indexer ->
                 sheet.Cells.[indexer]
@@ -26,21 +49,92 @@ module Types =
                 let indexer = sheet.Dimension.Start.Address + ":" + sheet.Dimension.End.Address
                 sheet.Cells.[indexer]
 
+
+        member x.LoadFromArraysAsTable(arrays: obj [, ], ?columnAutofitOptions, ?tableName: string, ?tableStyle: Table.TableStyles) =
+            let worksheet = x.Value
+            
+            worksheet.Cells.["A1"].LoadFromArray2D(arrays) |> ignore
+                
+            let userRange = x.GetRange(RangeGettingOptions.UserRange)
+
+            let tab = worksheet.Tables.Add(userRange, defaultArg tableName "Table1")
+
+            tab.TableStyle <- 
+                defaultArg tableStyle Table.TableStyles.Medium2
+
+            match defaultArg columnAutofitOptions ColumnAutofitOptions.DefaultValue with 
+            | ColumnAutofitOptions.AutoFit(minimumSize, maximumSize) ->
+                userRange.AutoFitColumns(minimumSize, maximumSize)
+
+            | ColumnAutofitOptions.None -> ()
+
+        static member Create(excelworksheet: ExcelWorksheet) =
+            match excelworksheet with 
+            | null -> failwithf "Cannot create VisibleExcelWorksheet: excelworksheet is null"
+            | _ -> ()
+
+            match excelworksheet.Hidden with 
+            | eWorkSheetHidden.Visible -> ()
+            | _ -> failwithf "Cannot create VisibleExcelWorksheet: excelworksheet %s is hidden" excelworksheet.Name
+
+            VisibleExcelWorksheet excelworksheet
+
+
+                    
+    /// both visible and having contents
+    type ValidExcelWorksheet(visibleExcelWorksheet: VisibleExcelWorksheet) =
+        do
+            match visibleExcelWorksheet.Value.Dimension with
+            | null -> raise(SheetContentsEmptyException (sprintf "Cannot create VisibleExcelWorksheet: Contents in sheet %s is empty" visibleExcelWorksheet.Value.Name))
+            | _ -> ()
+
+
+        member x.Value = visibleExcelWorksheet.Value
+
+        member x.Name = x.Value.Name
+
+        member x.VisibleExcelWorksheet = visibleExcelWorksheet
+
+        new (excelworksheet: ExcelWorksheet) =
+            ValidExcelWorksheet(VisibleExcelWorksheet.Create(excelworksheet))
+        
+
+
+
     type SheetGettingOptions =
         | SheetName of string
         | SheetIndex of int
         | SheetNameOrSheetIndex of sheetName: string * index: int
-    
+    with 
+        static member DefaultValue = 
+            SheetGettingOptions.SheetNameOrSheetIndex (SHEET1, 0)
 
     type ExcelPackage with
-        member excelPackage.GetWorkSheet (options) =
-            match options with 
-            | SheetGettingOptions.SheetName sheetName -> excelPackage.Workbook.Worksheets.[sheetName]
-            | SheetGettingOptions.SheetIndex index -> excelPackage.Workbook.Worksheets.[index]
-            | SheetGettingOptions.SheetNameOrSheetIndex (sheetName, index) ->
-                match Seq.tryFind (fun (worksheet: ExcelWorksheet) -> worksheet.Name = sheetName) excelPackage.Workbook.Worksheets with 
+        member excelPackage.GetVisibleWorksheet (options) =
+            let getVisibleSheetByIndex(index) =
+                let worksheet =
+                    excelPackage.Workbook.Worksheets
+                    |> Seq.filter(fun m -> m.Hidden = eWorkSheetHidden.Visible)
+                    |> Seq.tryItem index
+
+                match worksheet with 
                 | Some worksheet -> worksheet
-                | None -> excelPackage.Workbook.Worksheets.[index]
+                | None -> failwithf "Cannot get visible worksheet %A from %s, please check xlsx file" options excelPackage.File.FullName
+
+            let excelworksheet = 
+                match options with 
+                | SheetGettingOptions.SheetName sheetName -> excelPackage.Workbook.Worksheets.[sheetName]
+                | SheetGettingOptions.SheetIndex index -> getVisibleSheetByIndex index
+                | SheetGettingOptions.SheetNameOrSheetIndex (sheetName, index) ->
+                    match Seq.tryFind (fun (worksheet: ExcelWorksheet) -> worksheet.Name = sheetName && worksheet.Hidden = eWorkSheetHidden.Visible) excelPackage.Workbook.Worksheets with 
+                    | Some worksheet -> worksheet
+                    | None -> getVisibleSheetByIndex index
+
+            VisibleExcelWorksheet.Create excelworksheet
+
+        member excelPackage.GetValidWorksheet (options) =
+            excelPackage.GetVisibleWorksheet(options)
+            |> ValidExcelWorksheet
 
 
     type ExcelRangeContactInfo =
@@ -48,61 +142,60 @@ module Types =
           RowFirst: int
           ColumnLast: int
           RowLast: int
-          WorkbookPath: string
+          XlsxFile: XlsxFile
           SheetName: string
           Content: obj[,] }
     with 
+        member x.WorkbookPath = x.XlsxFile.Path
+
         member xlRef.CellAddress = ExcelAddress(xlRef.RowFirst, xlRef.ColumnFirst, xlRef.RowLast, xlRef.ColumnLast)
     
-        override xlRef.ToString() = sprintf "%s_%s_%d_%d_%d_%d" xlRef.WorkbookPath xlRef.SheetName xlRef.RowFirst xlRef.ColumnFirst xlRef.RowLast xlRef.ColumnLast
+        override xlRef.ToString() = sprintf "%s %s (%d, %d, %d, %d)" xlRef.WorkbookPath xlRef.SheetName xlRef.RowFirst xlRef.ColumnFirst xlRef.RowLast xlRef.ColumnLast
     
     
-    type SheetContentsEmptyException(error: string) =
-        inherit Exception(error)
+
 
     [<RequireQualifiedAccess>]
     module ExcelRangeContactInfo =
     
         let cellAddress (xlRef: ExcelRangeContactInfo) = xlRef.CellAddress
     
-        let readFromFile (rangeGettingArg: RangeGettingOptions) (sheetGettingArg: SheetGettingOptions) workbookPath =
-            if not <| File.Exists workbookPath then failwithf "File %s not exists" workbookPath
+        let readFromFile (rangeGettingArg: RangeGettingOptions) (sheetGettingArgs: SheetGettingOptions) (xlsxFile: XlsxFile) =
     
-            use excelPackage = new ExcelPackage(FileInfo(workbookPath))
-            let sheet = excelPackage.GetWorkSheet sheetGettingArg
-            match sheet.Dimension  with 
-            | null -> 
-                raise(SheetContentsEmptyException (sprintf "%A Contents in sheet %s is empty" rangeGettingArg sheet.Name))
-                
-            | _ ->
-                use range = sheet.GetRange(rangeGettingArg)
+            use excelPackage = new ExcelPackage(FileInfo(xlsxFile.Path))
+            let sheet = excelPackage.GetValidWorksheet sheetGettingArgs
+
+            let sheet = sheet.VisibleExcelWorksheet
+
+            use range = sheet.GetRange(rangeGettingArg)
     
-                let rowStart = range.Start.Row
-                let rowEnd = range.End.Row
-                let columnStart = range.Start.Column
-                let columnEnd = range.End.Column
+            let rowStart = range.Start.Row
+            let rowEnd = range.End.Row
+            let columnStart = range.Start.Column
+            let columnEnd = range.End.Column
     
-                let content =
-                    array2D
-                        [ for i = rowStart to rowEnd do 
-                            yield
-                                [ for j = columnStart to columnEnd do yield range.[i,j].Value ]
-                        ] 
+            let content =
+                array2D
+                    [ for i = rowStart to rowEnd do 
+                        yield
+                            [ for j = columnStart to columnEnd do yield range.[i,j].Value ]
+                    ] 
     
-                { ColumnFirst = columnStart
-                  RowFirst = rowStart
-                  ColumnLast = columnEnd
-                  RowLast = rowEnd
-                  WorkbookPath = workbookPath
-                  SheetName = sheet.Name
-                  Content = content }   
+            { ColumnFirst = columnStart
+              RowFirst = rowStart
+              ColumnLast = columnEnd
+              RowLast = rowEnd
+              XlsxFile = xlsxFile
+              SheetName = sheet.Name
+              Content = content }   
     
 
     type ExcelPackage with 
         member excelPackage.GetWorkSheet(xlRef: ExcelRangeContactInfo) =
             excelPackage.Workbook.Worksheets
             |> Seq.find (fun worksheet -> worksheet.Name = xlRef.SheetName)
-    
+
+
         member excelPackage.GetExcelRange(xlRef: ExcelRangeContactInfo) =
             let workbookSheet = excelPackage.GetWorkSheet xlRef
             workbookSheet.Cells.[xlRef.RowFirst, xlRef.ColumnFirst, xlRef.RowLast, xlRef.ColumnLast]
@@ -113,9 +206,11 @@ module Types =
           RowFirst: int
           ColumnLast: int
           RowLast: int
-          WorkbookPath: string
+          XlsxFile: XlsxFile
           SheetName: string }
     with 
+        member x.WorkbookPath = x.XlsxFile.Path
+
         member xlRef.CellAddress = ExcelAddress(xlRef.RowFirst, xlRef.ColumnFirst, xlRef.RowLast, xlRef.ColumnLast)
     
     [<RequireQualifiedAccess>]
@@ -125,7 +220,7 @@ module Types =
               RowFirst = xlRef.RowFirst
               ColumnLast = xlRef.ColumnLast
               RowLast = xlRef.RowLast
-              WorkbookPath = xlRef.WorkbookPath
+              XlsxFile = xlRef.XlsxFile
               SheetName = xlRef.SheetName }
     
         let toExcelRangeContactInfo content (xlRef: SerializableExcelReference) : ExcelRangeContactInfo =
@@ -133,7 +228,7 @@ module Types =
               RowFirst = xlRef.RowFirst
               ColumnLast = xlRef.ColumnLast
               RowLast = xlRef.RowLast
-              WorkbookPath = xlRef.WorkbookPath
+              XlsxFile = xlRef.XlsxFile
               SheetName = xlRef.SheetName
               Content = content }
     
@@ -145,8 +240,10 @@ module Types =
     /// both contents and headers must be fixed before created
     ///
     /// code base of excelArray and table
-    type internal ExcelFrame<'TRowKey,'TColumnKey when 'TRowKey: equality and 'TColumnKey: equality> =
-        private ExcelFrame of Frame<'TRowKey,'TColumnKey>
+    ///
+    ///
+    type internal ExcelFrame<'TColumnKey when 'TColumnKey: equality> =
+        private ExcelFrame of Frame<int, 'TColumnKey>
     with
         member x.AsFrame =
             let (ExcelFrame frame) = x
@@ -155,9 +252,22 @@ module Types =
     [<RequireQualifiedAccess>]
     module internal ExcelFrame =
 
+        //let private ensureIsNotEmptyWhenCreating(excelFrame: ExcelFrame<_, _>) =
+        //    match excelFrame.AsFrame.IsEmpty with 
+        //    | true -> failwith "Cannot create ExcelFrame when it is empty"
+        //    | false -> excelFrame
+            
+        let private ensureDatasValid (frame: ExcelFrame<_>) =
+            frame
+            //match frame.AsFrame.RowCount with 
+            //| 0 -> failwith "Frame is empty"
+            //| _ -> frame
+
+
         let mapFrame mapping (ExcelFrame frame) =
             mapping frame
             |> ExcelFrame
+            |> ensureDatasValid
     
         let mapValuesString mapping =
             mapFrame (Frame.mapValuesString mapping)
@@ -175,19 +285,23 @@ module Types =
                 |> array2D
             result
 
+        let private fixContent (content: obj) =
+            match content with
+            | :? ExcelErrorValue -> box null
+            | _ -> 
+                content
+
+
         let ofArray2D (array2D: obj[,]) =
+
             let fixContents contents =
-                contents |> Array2D.map (fun (value: obj) ->
-                    match value with
-                    | :? ExcelErrorValue -> box null
-                    | _ -> value
-                )
-    
+                contents |> Array2D.map fixContent
             array2D
             |> Array2D.rebase
             |> fixContents
             |> Frame.ofArray2D
             |> ExcelFrame
+            //|> ensureIsNotEmptyWhenCreating
     
         let ofArray2DWithHeader (array: obj[,]) =
             let fixHeaders headers =
@@ -218,8 +332,12 @@ module Types =
             |> ExcelFrame
     
         let ofRecords (records: seq<'record>) =
-            Frame.ofRecords records
+            (Frame.ofRecords records)
             |> ExcelFrame
 
-    
-    
+
+        let ofFrameWithHeaders (frame: Frame<_, _>) =
+            frame
+            |> Frame.mapValues fixContent
+            |> ExcelFrame
+            |> ensureDatasValid

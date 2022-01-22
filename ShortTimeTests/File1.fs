@@ -2,6 +2,7 @@
 
 namespace 眼镜复杂外箱贴
 #nowarn "0104"
+
 module Module_眼镜复杂外箱贴 =
     open System.IO
     open Deedle
@@ -14,7 +15,7 @@ module Module_眼镜复杂外箱贴 =
         let excelRangeContactInfo = 
             ExcelRangeContactInfo.readFromFile 
                 RangeGettingOptions.UserRange 
-                (SheetGettingOptions.SheetNameOrSheetIndex ("Sheet1", 0)) xlsxFile
+                (SheetGettingOptions.SheetNameOrSheetIndex (StringIC "sheet1", 0)) xlsxFile
         
         let table = 
 
@@ -24,7 +25,7 @@ module Module_眼镜复杂外箱贴 =
                 let cartonNumber = 
                     frame.ColumnKeys
                     |> List.ofSeq
-                    |> List.find(fun m -> m = stringIC "件数")
+                    |> List.find(fun m -> m = StringIC "件数")
                 Frame.filterRowValues (fun row ->
                     (row.FillMissing "").[cartonNumber].ToString() <> ""
                 ) frame
@@ -32,7 +33,7 @@ module Module_眼镜复杂外箱贴 =
             |> Table.fillEmptyUp
             |> Table.splitRowToMany ["箱号_Left"; "箱号_Right"] (fun key row ->
                 let cartonIdLeft, cartonIdRight =
-                    let cartonIdRangeText = row.[stringIC "箱号"].ToString()
+                    let cartonIdRangeText = row.[StringIC "箱号"].ToString()
                     let texts = cartonIdRangeText.Split([| "--"; "-" |], System.StringSplitOptions.None)
                     System.Int32.Parse(texts.[0]), System.Int32.Parse(texts.[1])
 
@@ -45,7 +46,6 @@ module Module_眼镜复杂外箱贴 =
         table
 
     let storages() =
-        let tb = parse(XlsxFile @"D:\Users\Jia\Documents\Tencent Files\857701188\FileRecv\EU80-21014  &21015 装箱明细2.xlsx")
-        let m = tb
+        let tb = parse(XlsxFile @"D:\VsCode\Github\CellScript\ShortTimeTests\datas\EU80-21291  装箱明细.xlsx")
         tb.SaveToXlsx(@"C:\Users\Jia\Desktop\新建 Microsoft Excel 工作表.xlsx")
         ()

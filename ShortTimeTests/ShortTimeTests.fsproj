@@ -13,8 +13,20 @@
     <Compile Include="Program.fs" />
   </ItemGroup>
 
+  <!--<ItemGroup>
+    <PackageReference Include="Shrimp.ServerScripting.Orders.Files" Version="0.0.2" />
+  </ItemGroup>-->
+
   <ItemGroup>
     <ProjectReference Include="..\src\server\CellScript.Core\CellScript.Core.fsproj" />
   </ItemGroup>
+
+  <!--<ItemGroup>
+    <PackageReference Include="Shrimp.ServerScripting.Orders.Files" Version="0.0.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\src\server\CellScript.Core\CellScript.Core.fsproj" />
+  </ItemGroup>-->
 
 </Project>

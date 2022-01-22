@@ -9,12 +9,12 @@ open System.Runtime.CompilerServices
 open Shrimp.FSharp.Plus
 
 
-[<AutoOpen>]
 module Constrants = 
     let [<Literal>] SHEET1 = "Sheet1"
 
 
 module Extensions =
+
 
     [<RequireQualifiedAccess>]
     module CellValue =
@@ -33,7 +33,7 @@ module Extensions =
         /// no missing or cell empty
         let (|HasSense|NoSense|) (v: obj option) =
             match v with
-            | Some value -> if isEmpty v then NoSense else HasSense value
+            | Some v -> if isEmpty v then NoSense else HasSense v
             | None -> NoSense
 
 
@@ -71,8 +71,8 @@ module Extensions =
 
     [<RequireQualifiedAccess>]
     module Frame =
-        let Concat_RemoveRowKeys(frames: AtLeastOneList<Frame<_, _>>) =
 
+        let Concat_RefreshRowKeys(frames: AtLeastOneList<Frame<_, _>>) =
             match frames.AsList with 
             | [ frame ] -> Frame.indexRowsOrdinally frame
             | _ ->
@@ -83,9 +83,11 @@ module Extensions =
                         |> Set.ofSeq
                     )
 
+                
+
                 headerLists
                 |> List.reduce(fun headers1 headers2 -> 
-                    if headers1 <> headers2 then failwithf "headers1 %A <> headers2 %A when concating table" headers1 headers2
+                    if headers1 <> headers2 then failwithf "headers1 %A <> headers2 %A when concating table" (Set.toList headers1) (Set.toList headers2)
                     else headers2
                 )
                 |> ignore
@@ -116,7 +118,9 @@ module Extensions =
                 Frame.ofRowsOrdinal rows
                 |> Frame.indexRowsOrdinally
 
-
+        [<System.Obsolete("This method is obsolted, using RefreshRowKeys instead")>]
+        let Concat_RemoveRowKeys(frames: AtLeastOneList<Frame<_, _>>) =
+            Concat_RefreshRowKeys(frames)
 
         let Concat_KeepRowKeys(frames: AtLeastOneList<Frame<_, _>>) =
             match frames.AsList with
@@ -181,18 +185,34 @@ module Extensions =
         
         let internal fillEmptyUp frame =
             Frame.mapColValues (fun column ->
-                column 
-                |> Series.mapAll (fun index value ->
-                    let rec searchValue index value =
-                        match value with 
-                        | CellValue.HasSense v -> Some v
-                        | _ -> 
-                            let newIndex = (index - 1)
-                            if Seq.contains newIndex column.Keys 
-                            then searchValue newIndex (Series.tryGet newIndex column)
-                            else value
-                    searchValue index value
-                )) frame
+                let values = 
+                    column.GetAllValues()
+                    |> List.ofSeq
+                    |> List.map OptionalValue.asOption
+
+                let rec loop values accum accumValues =
+                    match values with 
+                    | h :: t ->
+                        match h with 
+                        | CellValue.HasSense v -> loop t (Some v) (v :: accumValues)
+                        | CellValue.NoSense -> 
+                            match accum with 
+                            | Some accum ->
+                                loop t (Some accum) (accum :: accumValues)
+                            | None -> 
+                                match h with 
+                                | Some h ->
+                                    loop t None (h :: accumValues)
+                                | None -> loop t None (null :: accumValues)
+
+                    | [] -> accumValues
+
+                loop values None []
+                |> List.rev
+                |> Series.ofValues
+                |> Series.indexWith (column.Keys)
+
+                ) frame
 
 
         let internal splitRowToMany addtionalHeaders (mapping : 'R -> ObjectSeries<_> -> seq<seq<obj>>)  (frame: Frame<'R,'C>) =
@@ -214,7 +234,7 @@ module Extensions =
 
 
     type ExcelRangeBase with
-        member x.LoadFromArray2D(array2D: obj [,]) =
+        member internal x.LoadFromArray2D(array2D: obj [,]) =
             let baseArray = Array2D.toSeqs array2D |> Seq.map Array.ofSeq
             x.LoadFromArrays(baseArray)
 

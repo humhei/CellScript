@@ -5,18 +5,26 @@ open System
 open OfficeOpenXml
 open System.IO
 open Shrimp.FSharp.Plus
+open Constrants
 
 [<AutoOpen>]
 module Types = 
 
     let internal fixContent (content: obj) =
         match content with
+        | :? ConvertibleUnion as v -> v.Value
+        | null -> null
         | :? ExcelErrorValue -> null
-        | :? string as text -> text.Trim() :> IConvertible
-        | _ -> 
-            match content with 
-            | :? IConvertible as v -> v
-            | _ -> failwithf "Cannot convert to %A to iconvertible" (content.GetType())
+        | :? string as text -> 
+            match text.Trim() with 
+            | "" -> null 
+            | text -> text :> IConvertible
+        | :? IConvertible as v -> 
+            match v with 
+            | :? ConvertibleUnion as v -> v.Value
+            | :? DBNull -> null
+            | _ -> v
+        | _ -> failwithf "Cannot convert to %A to iconvertible" (content.GetType())
 
 
     type ExcelPackageWithXlsxFile = private ExcelPackageWithXlsxFile of XlsxFile * ExcelPackage
@@ -38,29 +46,8 @@ module Types =
             let package = new ExcelPackage(FileInfo xlsxFile.Path)
             ExcelPackageWithXlsxFile(xlsxFile, package)
 
-    [<RequireQualifiedAccess>]
-    module internal ListObj =
-        let toNumberic (values: seq<IConvertible>) =
-            let values = 
-                values
-                |> List.ofSeq
-
-            let numberic =
-                values
-                |> List.choose(fun m ->
-                    match Double.TryParse (string m) with 
-                    | true, v -> Some (v :> IConvertible)
-                    | _ -> None
-                )
-
-            if numberic.Length = values.Length
-            then Some numberic
-            else None
-
-
     let internal DefaultTableStyle() = Table.TableStyles.Medium2
-    let [<Literal>] internal  DefaultTableName = "Table1"
-    let [<Literal>] internal  CELL_SCRIPT_COLUMN = "CellScriptColumn"
+
 
     type SheetReference =
         { WorkbookPath: string 
@@ -103,9 +90,10 @@ module Types =
                 sheet.Cells.[indexer]
 
 
-        member x.LoadFromArraysAsTable(arrays: obj [, ], ?columnAutofitOptions, ?tableName: string, ?tableStyle: Table.TableStyles, ?addr) =
+        member x.LoadFromArraysAsTable(arrays: IConvertible [, ], ?columnAutofitOptions, ?tableName: string, ?tableStyle: Table.TableStyles, ?addr) =
             let worksheet = x.Value
             let addr = defaultArg addr "A1"
+
             let range = worksheet.Cells.[addr].LoadFromArray2D(arrays) 
                 
             let tab = worksheet.Tables.Add(ExcelAddress range.Address, defaultArg tableName DefaultTableName)
@@ -211,7 +199,7 @@ module Types =
           RowLast: int
           XlsxFile: XlsxFile
           SheetName: string
-          Content: obj[,] }
+          Content: ConvertibleUnion[,] }
     with 
         member x.WorkbookPath = x.XlsxFile.Path
 
@@ -245,8 +233,9 @@ module Types =
                 array2D
                     [ for i = rowStart to rowEnd do 
                         yield
-                            [ for j = columnStart to columnEnd do yield range.[i,j].Value ]
+                            [ for j = columnStart to columnEnd do yield fixContent range.[i,j].Value ]
                     ] 
+                |> Array2D.map ConvertibleUnion.Convert
     
             { ColumnFirst = columnStart
               RowFirst = rowStart
@@ -306,137 +295,3 @@ module Types =
         let cellAddress xlRef =
             ExcelAddress(xlRef.RowFirst, xlRef.ColumnFirst, xlRef.RowLast, xlRef.ColumnLast)
     
-    
-
-    /// both contents and headers must be fixed before created
-    ///
-    /// code base of excelArray and table
-    ///
-    ///
-    type internal ExcelFrame<'TColumnKey when 'TColumnKey: equality> =
-        private ExcelFrame of Frame<int, 'TColumnKey>
-    with
-        member x.AsFrame =
-            let (ExcelFrame frame) = x
-            frame
-    
-    [<RequireQualifiedAccess>]
-    module internal ExcelFrame =
-
-        //let private ensureIsNotEmptyWhenCreating(excelFrame: ExcelFrame<_, _>) =
-        //    match excelFrame.AsFrame.IsEmpty with 
-        //    | true -> failwith "Cannot create ExcelFrame when it is empty"
-        //    | false -> excelFrame
-        let autoNumbericColumns (ExcelFrame frame) = 
-            frame
-            |> Frame.mapCols(fun _ col ->
-                let keys = List.ofSeq col.Keys
-                let numberic: list<IConvertible> option =
-                    col.ValuesAll
-                    |> List.ofSeq
-                    |> List.map(fun m -> m :?> IConvertible)
-                    |> ListObj.toNumberic
-
-                match numberic with 
-                | Some numberic -> 
-                    numberic
-                    |> Series.ofValues
-                    |> Series.mapKeys(fun i -> keys.[i]) :> ISeries<_>
-
-                | None -> col :> ISeries<_>
-
-            )
-            |> ExcelFrame
-
-        let private ensureDatasValid (frame: ExcelFrame<_>) =
-            frame
-            //match frame.AsFrame.RowCount with 
-            //| 0 -> failwith "Frame is empty"
-            //| _ -> frame
-
-
-        let mapFrame mapping (ExcelFrame frame) =
-            mapping frame
-            |> ExcelFrame
-            |> ensureDatasValid
-    
-        let mapValuesString mapping =
-            mapFrame (Frame.mapValuesString mapping)
-    
-        let toArray2D (ExcelFrame frame): IConvertible [,] =
-            frame.ToArray2D(null)
-
-
-        let toArray2DWithHeader (ExcelFrame frame) =
-    
-            let header = frame.ColumnKeys |> Seq.map (fun m -> (m.ToString() :> IConvertible))
-    
-            let contents = frame.ToArray2D(null) |> Array2D.toSeqs
-            let result =
-                Seq.append [header] contents
-                |> array2D
-
-            result
-
-
-
-        let ofArray2DWithConvitable (array2D: IConvertible[,]) =
-            array2D
-            |> Array2D.rebase
-            |> Frame.ofArray2D
-            |> ExcelFrame
-            //|> ensureIsNotEmptyWhenCreating
-
-        let ofArray2D (array2D: obj[,]) =
-
-            let fixContents contents =
-                contents |> Array2D.map fixContent
-
-            array2D
-            |> fixContents
-            |> ofArray2DWithConvitable
-            //|> ensureIsNotEmptyWhenCreating
-    
-        let ofArray2DWithHeader_Convititable (array: IConvertible[,]) =
-            let fixHeaders headers =
-                let headers = List.ofSeq headers
-                headers |> List.mapi (fun i (header: IConvertible) ->
-                    match header with
-                    | null -> 
-                        (sprintf "%s%d" CELL_SCRIPT_COLUMN i)
-                    | _ -> 
-                        headers.[0 .. i - 1]
-                        |> List.filter(fun preHeader -> preHeader = header)
-                        |> function
-                            | matchHeaders when matchHeaders.Length > 0 ->
-                                let headerText = header.ToString()
-                                sprintf "%s%d" headerText (matchHeaders.Length + 1) 
-                            | [] -> header.ToString()
-                            | _ -> failwith "invalid token"
-                )
-
-            let array = Array2D.rebase array
-    
-            let headers = array.[0,*] |> fixHeaders |> Seq.map (fun header -> header.ToString())
-    
-            let contents = ofArray2DWithConvitable array.[1..,*] 
-    
-            Frame.indexColsWith headers contents.AsFrame
-            |> ExcelFrame
-
-        let ofArray2DWithHeader (array: obj[,]) =
-            array
-            |> Array2D.map fixContent
-            |> ofArray2DWithHeader_Convititable
-
-
-        let ofRecords (records: seq<'record>) =
-            (Frame.ofRecords records)
-            |> ExcelFrame
-
-
-        let ofFrameWithHeaders (frame: Frame<_, _>) =
-            frame
-            |> Frame.mapValues fixContent
-            |> ExcelFrame
-            |> ensureDatasValid

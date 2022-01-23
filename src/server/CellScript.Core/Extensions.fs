@@ -11,36 +11,21 @@ open Shrimp.FSharp.Plus
 
 module Constrants = 
     let [<Literal>] SHEET1 = "Sheet1"
+    let [<Literal>] ``#N/A`` = "#N/A"
+
+    let [<Literal>] internal  DefaultTableName = "Table1"
+    let [<Literal>] internal  CELL_SCRIPT_COLUMN = "CellScriptColumn"
+
+type ICellValue =
+    abstract member Convertible: IConvertible
+
 
 
 module Extensions =
 
 
     [<RequireQualifiedAccess>]
-    module CellValue =
-
-        let private isTextEmpty (v: obj) =
-            match v with
-            | :? string as v -> v = ""
-            | _ -> false
-
-        let private isEmpty (v: obj) =
-            isTextEmpty v
-
-        let private isNotEmpty (v: obj) =
-            isEmpty v |> not
-
-        /// no missing or cell empty
-        let (|HasSense|NoSense|) (v: obj option) =
-            match v with
-            | Some v -> if isEmpty v then NoSense else HasSense v
-            | None -> NoSense
-
-
-
-
-    [<RequireQualifiedAccess>]
-    module Array2D =
+    module internal Array2D =
 
         let toSeqs (input: 'a[,]) =
             let l1 = input.GetLowerBound(0)
@@ -70,7 +55,7 @@ module Extensions =
  
 
     [<RequireQualifiedAccess>]
-    module Frame =
+    module internal Frame =
 
         let Concat_RefreshRowKeys(frames: AtLeastOneList<Frame<_, _>>) =
             match frames.AsList with 
@@ -83,7 +68,6 @@ module Extensions =
                         |> Set.ofSeq
                     )
 
-                
 
                 headerLists
                 |> List.reduce(fun headers1 headers2 -> 
@@ -179,14 +163,10 @@ module Extensions =
             )
 
 
-        let mapValuesString mapping frame =
-            let mapping raw = mapping (raw.ToString())
-            Frame.mapValues mapping frame
-        
         let internal fillEmptyUp frame =
             Frame.mapColValues (fun column ->
                 let values = 
-                    column.GetAllValues()
+                    column.GetValues()
                     |> List.ofSeq
                     |> List.map OptionalValue.asOption
 
@@ -194,8 +174,8 @@ module Extensions =
                     match values with 
                     | h :: t ->
                         match h with 
-                        | CellValue.HasSense v -> loop t (Some v) (v :: accumValues)
-                        | CellValue.NoSense -> 
+                        | Some v -> loop t (Some v) (v :: accumValues)
+                        | None -> 
                             match accum with 
                             | Some accum ->
                                 loop t (Some accum) (accum :: accumValues)
@@ -222,7 +202,7 @@ module Extensions =
 
             let values = 
                 frame.Rows.Values
-                |> Seq.mapi (fun i value -> mapping (Seq.item i frame.RowKeys) value)
+                |> Seq.mapi (fun i value -> (mapping (Seq.item i frame.RowKeys) value))
                 |> Seq.concat
                 |> array2D
 
@@ -234,8 +214,8 @@ module Extensions =
 
 
     type ExcelRangeBase with
-        member internal x.LoadFromArray2D(array2D: obj [,]) =
-            let baseArray = Array2D.toSeqs array2D |> Seq.map Array.ofSeq
+        member internal x.LoadFromArray2D(array2D: IConvertible [,]) =
+            let baseArray = Array2D.toSeqs array2D |> Seq.map (Array.ofSeq >> Array.map box)
             x.LoadFromArrays(baseArray)
 
 

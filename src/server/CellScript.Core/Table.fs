@@ -12,57 +12,39 @@ open FParsec
 open FParsec.CharParsers
 open CellScript.Core.Constrants
 
-type ITableCell =
-    abstract member CellText: unit -> string
-
-
-type ITableCellValue =
-    abstract member Value: unit -> IConvertible
-
-[<RequireQualifiedAccess>]
-module ITableCell =
-    let getCellText (cell: #ITableCell) =
-        cell.CellText()
-
-
-
-[<Extension>]
-type _ITableCellExtensions =
-    [<Extension>] static member CellText(cell: #ITableCell) = cell.CellText()
-
-
 type TableXlsxSavingOptions =
     { IsOverride: bool 
       SheetName: string
       ColumnAutofitOptions: ColumnAutofitOptions
       TableName: string
-      AutoNumbericColumn: bool
-      TableStyle: Table.TableStyles
-      }
+      TableStyle: Table.TableStyles }
 with 
-    static member Create(?isOverride: bool, ?sheetName: string, ?columnAutofitOptions, ?tableName: string, ?tableStyle, ?automaticNumbericColumn) =
+    static member Create(?isOverride: bool, ?sheetName: string, ?columnAutofitOptions, ?tableName: string, ?tableStyle) =
         {
             IsOverride = defaultArg isOverride true
             SheetName = defaultArg sheetName SHEET1
             ColumnAutofitOptions = defaultArg columnAutofitOptions ColumnAutofitOptions.DefaultValue
             TableName = defaultArg tableName DefaultTableName
-            AutoNumbericColumn = defaultArg automaticNumbericColumn false
             TableStyle = defaultArg tableStyle <| DefaultTableStyle()
         }
 
     static member DefaultValue = TableXlsxSavingOptions.Create()       
 
 
+
+
 type ITableColumnKey =
     abstract member StringIC: unit -> StringIC
 
-
 type ITableColumnKey<'Value when 'Value :> IConvertible> =
     inherit ITableColumnKey
+    //abstract member ToConvertible: 'Value -> IConvertible
 
-type ITableUnionColumnKey<'Value when 'Value :> IConvertible> =
-    inherit ITableColumnKey<'Value>
+
+type ITableColumnKeyEx<'Value when 'Value :> ICellValue> =
+    inherit ITableColumnKey
     abstract member Unbox: IConvertible -> 'Value
+
 
 [<AutoOpen>]
 module __ITableColumnKeyExtensions =
@@ -71,48 +53,67 @@ module __ITableColumnKeyExtensions =
     type _ITableColumnKeyExtensions = 
         [<Extension>]
         static member GetBy(row: ObjectSeries<StringIC>, columnKey: ITableColumnKey<'Value>) =
-            match columnKey with 
-            | :? ITableUnionColumnKey<'Value> as iTableRowMapping ->
-                row.GetAs(columnKey.StringIC())
-                |> iTableRowMapping.Unbox
-                
-            | _ -> row.GetAs<'Value>(columnKey.StringIC())
+            row.GetAs<'Value>(columnKey.StringIC())
 
-        //[<Extension>]
-        //static member TryGetBy(row: ObjectSeries<StringIC>, columnKey: #ITableColumnKey<'Value>) =
-        //    row.TryGetAs<'Value>(columnKey.StringIC())
+        [<Extension>]
+        static member GetBy(row: ObjectSeries<StringIC>, columnKey: ITableColumnKeyEx<'Value>) =
+            let convertible = row.GetAs<obj>(columnKey.StringIC())
+            match convertible with 
+            | :? IConvertible as convertible -> convertible |> columnKey.Unbox
+            | :? ICellValue as v -> v :?> 'Value
+            | _ -> failwithf "type of cell value %A should either be ITableCellValue or IConvertible" (convertible.GetType())
 
         [<Extension>]
         static member GetColumnBy(frame: Frame<_ ,StringIC>, columnKey: ITableColumnKey<'Value>) =
-            match columnKey with 
-            | :? ITableUnionColumnKey<'Value> as iTableRowMapping ->
-                frame.GetColumn(columnKey.StringIC())
-                |> Series.mapValues iTableRowMapping.Unbox
-                
-            | _ -> frame.GetColumn<'Value>(columnKey.StringIC())
+            frame.GetColumn<'Value>(columnKey.StringIC())
+
+        [<Extension>]
+        static member GetColumnBy(frame: Frame<_ ,StringIC>, columnKey: ITableColumnKeyEx<'Value>) =
+            frame.GetColumn<obj>(columnKey.StringIC())
+            |> Series.mapValues (fun convertible ->
+                match convertible with 
+                | :? IConvertible as convertible -> convertible |> columnKey.Unbox
+                | :? ICellValue as v -> v :?> 'Value
+                | _ -> failwithf "type of cell value %A should either be ITableCellValue or IConvertible" (convertible.GetType())
+            )
+
 
         [<Extension>]
         static member TryGetColumnBy(frame: Frame<_ ,StringIC>, columnKey: ITableColumnKey<'Value>) =
-            match columnKey with 
-            | :? ITableUnionColumnKey<'Value> as iTableRowMapping ->
-                frame.TryGetColumn(columnKey.StringIC(), Lookup.Exact)
-                |> OptionalValue.asOption
-                |> Option.map (Series.mapValues iTableRowMapping.Unbox)
-                
-            | _ -> 
-                frame.TryGetColumn<'Value>(columnKey.StringIC(), Lookup.Exact)
-                |> OptionalValue.asOption
-            
+            frame.TryGetColumn<'Value>(columnKey.StringIC(), Lookup.Exact)
+            |> OptionalValue.asOption
+         
+        [<Extension>]
+        static member TryGetColumnBy(frame: Frame<_ ,StringIC>, columnKey: ITableColumnKeyEx<'Value>) =
+            frame.TryGetColumn<obj>(columnKey.StringIC(), Lookup.Exact)
+            |> OptionalValue.asOption
+            |> Option.map (Series.mapValues (fun convertible ->
+                match convertible with 
+                | :? IConvertible as convertible -> convertible |> columnKey.Unbox
+                | :? ICellValue as v -> v.Convertible :?> 'Value
+                | _ -> failwithf "type of cell value %A should either be ITableCellValue or IConvertible" (convertible.GetType())
+            ))
 
         [<Extension>]
-        static member GroupRowsBy(frame: Frame<_ ,StringIC>, columnKey: #ITableColumnKey<'Value>) =
+        static member GroupRowsBy(frame: Frame<_ ,StringIC>, columnKey: ITableColumnKey<'Value>) =
+            frame
+            |> Frame.groupRowsUsing(fun _ row ->
+                row.GetBy(columnKey)
+            )
+
+        [<Extension>]
+        static member GroupRowsBy(frame: Frame<_ ,StringIC>, columnKey: ITableColumnKeyEx<'Value>) =
             frame
             |> Frame.groupRowsUsing(fun _ row ->
                 row.GetBy(columnKey)
             )
 
     type Frame with
-        static member GroupRowsBy(columnKey: #ITableColumnKey<'Value>) =
+        static member GroupRowsBy(columnKey: ITableColumnKey<'Value>) =
+            fun (frame: Frame<_, StringIC>) ->
+                frame.GroupRowsBy(columnKey)
+
+        static member GroupRowsBy(columnKey: ITableColumnKeyEx<'Value>) =
             fun (frame: Frame<_, StringIC>) ->
                 frame.GroupRowsBy(columnKey)
 
@@ -134,7 +135,8 @@ with
 
     member x.Columns = x.AsFrame.Columns
 
-    member x.GetColumnBy(columnKey) = x.AsFrame.GetColumnBy(columnKey)
+    member x.GetColumnBy(columnKey: ITableColumnKey<_>) = x.AsFrame.GetColumnBy(columnKey)
+    member x.GetColumnBy(columnKey: ITableColumnKeyEx<_>) = x.AsFrame.GetColumnBy(columnKey)
 
 
     member table.MapFrame(mapping) =
@@ -143,60 +145,58 @@ with
 
     member x.RowCount = x.AsFrame.RowCount
 
-    member x.Headers =
-        x.AsFrame.ColumnKeys
+    member x.Headers = x.AsFrame.ColumnKeys
 
-    member x.AutomaticNumbericColumn() =
-        (ExcelFrame.autoNumbericColumns) x.AsExcelFrame
-        |> Table
-        
 
     member x.AddColumns(columns, ?position) =
-        let position = 
-            defaultArg position DataAddingPosition.AfterLast
+        let columns = List.ofSeq columns 
+        match columns with 
+        | [] -> x
+        | _ ->
+            let position = 
+                defaultArg position DataAddingPosition.AfterLast
 
-        x.MapFrame(fun frame ->
-
-            let originColumnKeys = frame.ColumnKeys |> Seq.indexed |> Seq.map (fun (i, v) -> (i, -1), v) |> List.ofSeq
+            x.MapFrame(fun frame ->
+                let originColumnKeys = frame.ColumnKeys |> Seq.indexed |> Seq.map (fun (i, v) -> (i, -1), v) |> List.ofSeq
             
-            let addingColumns =
-                let addingIndex = 
-                    match position with 
-                    | DataAddingPosition.BeforeFirst -> -1
-                    | DataAddingPosition.ByIndex i -> i 
-                    | DataAddingPosition.AfterLast -> originColumnKeys.Length - 1
-                    | DataAddingPosition.After k ->
-                        originColumnKeys
-                        |> List.tryFindIndex(fun (_, k') -> k' = k)
-                        |> function
-                            | Some i -> i
-                            | None -> failwithf "Invalid column adding position %A, all column keys are %A" position originColumnKeys
+                let addingColumns =
+                    let addingIndex = 
+                        match position with 
+                        | DataAddingPosition.BeforeFirst -> -1
+                        | DataAddingPosition.ByIndex i -> i 
+                        | DataAddingPosition.AfterLast -> originColumnKeys.Length - 1
+                        | DataAddingPosition.After k ->
+                            originColumnKeys
+                            |> List.tryFindIndex(fun (_, k') -> k' = k)
+                            |> function
+                                | Some i -> i
+                                | None -> failwithf "Invalid column adding position %A, all column keys are %A" position originColumnKeys
 
-                    | DataAddingPosition.Before k ->
-                        originColumnKeys
-                        |> List.tryFindIndex(fun (_, k') -> k' = k)
-                        |> function
-                            | Some i -> i-1
-                            | None -> failwithf "Invalid column adding position %A, all column keys are %A" position originColumnKeys
+                        | DataAddingPosition.Before k ->
+                            originColumnKeys
+                            |> List.tryFindIndex(fun (_, k') -> k' = k)
+                            |> function
+                                | Some i -> i-1
+                                | None -> failwithf "Invalid column adding position %A, all column keys are %A" position originColumnKeys
 
 
-                columns
-                |> Seq.mapi (fun i (columnKey, column) ->
-                    ((addingIndex, i), columnKey), column
-                )
+                    columns
+                    |> Seq.mapi (fun i (columnKey, column: #Series<_, _>) ->
+                        ((addingIndex, i), columnKey), column
+                    )
 
-            let frame = Frame.indexColsWith originColumnKeys frame
+                let frame = Frame.indexColsWith originColumnKeys frame
 
-            let newFrame = 
-                (frame, addingColumns)
-                ||> Seq.fold(fun frame (addingColumnKey, addingColumn) ->
-                    Frame.addCol addingColumnKey addingColumn frame
-                )
-                |> Frame.sortColsByKey
-                |> Frame.mapColKeys snd
+                let newFrame = 
+                    (frame, addingColumns)
+                    ||> Seq.fold(fun frame (addingColumnKey, addingColumn) ->
+                        Frame.addCol addingColumnKey addingColumn frame
+                    )
+                    |> Frame.sortColsByKey
+                    |> Frame.mapColKeys snd
 
-            newFrame
-        )
+                newFrame
+            )
 
     member x.AddColumn(key, values, ?position) =
         x.AddColumns([key, values], ?position = position)
@@ -209,31 +209,19 @@ with
         let values = List.replicate x.AsFrame.RowCount value
         x.AddColumn(key, values, ?position = position)
 
+    member frame.ToArray2D() = 
+        let header = frame.Headers |> Seq.map (fun m -> (m.Value :> IConvertible))
+       
+        let contents = 
+            frame.AsExcelFrame
+            |> ExcelFrame.toArray2D
+            |> Array2D.toSeqs
 
-
-    member x.ToArray2D(?usingITableCellMapping:bool, ?automaticNumbericColumn: bool) =
-        let x =
-            match defaultArg automaticNumbericColumn false with 
-            | true -> x.AutomaticNumbericColumn()
-            | false -> x
-
-        
-        let usingITableCellMapping = defaultArg  usingITableCellMapping false
-        let array2D =
-            ExcelFrame.toArray2DWithHeader x.AsExcelFrame
-
-        match usingITableCellMapping with 
-        | true ->
-            array2D
-            |> Array2D.map (fun v ->
-                match v with 
-                | :? ITableCellValue as cell -> cell.Value()
-                | :? ITableCell as cell -> (cell.CellText() :> IConvertible)
-                | _ -> v
-            )
-
-        | false -> array2D
-        
+        let result =
+            Seq.append [header] contents
+            |> array2D
+    
+        result
     
     member x.ToExcelArray() =
         let array2D = x.ToArray2D()
@@ -246,9 +234,7 @@ with
          sheetName,
          tableName,
          ?addr, 
-         ?usingITableCellMapping:bool,
          ?columnAutofitOptions,
-         ?automaticNumbericColumn,
          ?tableStyle) =
 
         let worksheet = 
@@ -261,10 +247,10 @@ with
                     excelPackage.Workbook.Worksheets.Add(sheetName)
                     |> VisibleExcelWorksheet.Create
 
-        let array2D = x.ToArray2D(?usingITableCellMapping = usingITableCellMapping, ?automaticNumbericColumn = automaticNumbericColumn)
+        let array2D = x.ToArray2D()
 
         worksheet.LoadFromArraysAsTable(
-            array2D |> Array2D.map box,
+            array2D,
             columnAutofitOptions = defaultArg columnAutofitOptions ColumnAutofitOptions.DefaultValue,
             tableName = tableName, 
             tableStyle = defaultArg tableStyle (DefaultTableStyle()),
@@ -279,7 +265,7 @@ with
         )
 
 
-    member x.SaveToXlsx(path: string, ?usingITableCellMapping:bool, ?tableXlsxSavingOptions: TableXlsxSavingOptions) =
+    member x.SaveToXlsx(path: string, ?tableXlsxSavingOptions: TableXlsxSavingOptions) =
         do (path |> XlsxPath |> ignore)
         let savingOptions = defaultArg tableXlsxSavingOptions TableXlsxSavingOptions.DefaultValue
 
@@ -291,20 +277,16 @@ with
             excelPackage,
             savingOptions.SheetName,
             savingOptions.TableName,
-            ?usingITableCellMapping = usingITableCellMapping,
             columnAutofitOptions = savingOptions.ColumnAutofitOptions,
-            automaticNumbericColumn = savingOptions.AutoNumbericColumn,
             tableStyle = savingOptions.TableStyle)
 
         excelPackage.Save()
         excelPackage.Dispose()
 
 
-    member x.SaveToXlsx_ITableCellMapping(path: string, ?tableXlsxSavingOptions: TableXlsxSavingOptions) =
-        x.SaveToXlsx(path = path, usingITableCellMapping = true, ?tableXlsxSavingOptions = tableXlsxSavingOptions)
 
-    member x.ToText(?usingITableCellMapping:bool) =
-        let array2D = x.ToArray2D(?usingITableCellMapping = usingITableCellMapping)
+    member x.ToText() =
+        let array2D = x.ToArray2D()
 
         let contents = 
             array2D
@@ -315,21 +297,15 @@ with
 
         contents
 
-    member x.SaveToTxt(path: TxtPath, ?usingITableCellMapping:bool, ?isOverride) =
+    member x.SaveToTxt(path: TxtPath, ?isOverride) =
         let path = path.Path
         let isOverride = defaultArg isOverride true
         if isOverride
         then File.Delete path
 
-        let contents = x.ToText(?usingITableCellMapping = usingITableCellMapping)
+        let contents = x.ToText()
       
         File.WriteAllText(path, contents, Text.Encoding.UTF8)
-
-    member x.ToText_ITableCellMapping() =
-        x.ToText(usingITableCellMapping = true)
-
-    member x.SaveToTxt_ITableCellMapping(path: TxtPath, ?isOverride) =
-        x.SaveToTxt(path = path, usingITableCellMapping = true, ?isOverride = isOverride)
 
 
     member x.GetColumns (indexes: seq<StringIC>)  =
@@ -341,48 +317,63 @@ with
 
         x.MapFrame mapping 
 
-
-    static member OfArray2D (array2D: IConvertible[,]) =
-        let frame = ExcelFrame.ofArray2DWithHeader_Convititable array2D
-        frame
-        |> ExcelFrame.mapFrame(Frame.mapColKeys StringIC)
+    static member private OfArray2D (array: IConvertible[,]) =
+        let fixHeaders headers =
+            let headers = List.ofSeq headers
+            headers |> List.mapi (fun i (header: IConvertible) ->
+                match header with
+                | null -> 
+                    (sprintf "%s%d" CELL_SCRIPT_COLUMN i)
+                | _ -> 
+                    headers.[0 .. i - 1]
+                    |> List.filter(fun preHeader -> preHeader = header)
+                    |> function
+                        | matchHeaders when matchHeaders.Length > 0 ->
+                            let headerText = header.ToString()
+                            sprintf "%s%d" headerText (matchHeaders.Length + 1) 
+                        | [] -> header.ToString()
+                        | _ -> failwith "invalid token"
+            )
+            |> List.map StringIC
+    
+        let array = Array2D.rebase array
+    
+        let headers = array.[0,*] |> fixHeaders 
+    
+        ExcelFrame.ofArray2DWithConvitable array.[1..,*] 
+        |> ExcelFrame.mapFrame(Frame.indexColsWith headers)
         |> Table.Table
+
+    static member OfArray2D (array2D: ConvertibleUnion[,]) =
+        array2D
+        |> Array2D.map (fun m -> m.Value)
+        |> Table.OfArray2D
 
     static member OfArray2D (array2D: obj[,]) =
         array2D
         |> Array2D.map fixContent
         |> Table.OfArray2D
-   
+
+
+    static member private OfFrame (frame: Frame<int, StringIC>) =
+        frame
+        |> Frame.mapValues fixContent
+        |> ExcelFrame
+        |> Table.Table
+
+    static member private OfFrame (frame: Frame<int, string>) =
+        frame
+        |> Frame.mapColKeys StringIC
+        |> Table.OfFrame
 
 
     static member OfRecords (records: seq<'record>) =
-        
-        ExcelFrame.ofRecords records
-        |> ExcelFrame.mapFrame(fun frame ->
-            Frame.mapColKeys StringIC frame
-            //let colKeys = 
-            //    typeof<'record>.GetProperties() |> Array.map (fun m -> m.Name)
-            //frame 
-            //|> Frame.mapColKeys (fun colKey ->
-            //    Seq.findIndex ((=) colKey) colKeys, StringIC colKey
-            //)
-            //|> Frame.sortColsByKey
-            //|> Frame.mapColKeys snd
-        )
-        |> Table.Table
-
-    static member OfFrame (frame: Frame<int, string>) =
-        frame
-        |> ExcelFrame.ofFrameWithHeaders 
-        |> ExcelFrame.mapFrame(Frame.mapColKeys StringIC)
-        |> Table.Table
-
-    static member OfFrame (frame: Frame<int, StringIC>) =
-        frame
-        |> Frame.mapColKeys StringIC.value
+        (Frame.ofRecords records)
+        |> Frame.mapColKeys StringIC
         |> Table.OfFrame
 
-    static member OfRowsOrdinal (rows: Series<StringIC, IConvertible> seq) =
+
+    static member private OfRowsOrdinal (rows: Series<StringIC, IConvertible> seq) =
         Frame.ofRowsOrdinal rows
         |> Frame.mapRowKeys int
         |> Table.OfFrame
@@ -405,7 +396,7 @@ with
 
         let excelRangeInfo = ExcelRangeContactInfo.readFromExcelPackages rangeGettingOptions sheetGettingOptions excelPackage
         
-        Table.OfArray2D(excelRangeInfo.Content)
+        Table.OfArray2D(excelRangeInfo.Content |> Array2D.map (fun m -> m.Value))
 
     static member OfXlsxFile(xlsxFile: XlsxFile, ?rangeGettingOptions, ?sheetGettingOptions) =
         let rangeGettingOptions = 
@@ -416,18 +407,19 @@ with
 
         let excelRangeInfo = ExcelRangeContactInfo.readFromFile rangeGettingOptions sheetGettingOptions xlsxFile
         
-        Table.OfArray2D(excelRangeInfo.Content)
+        Table.OfArray2D(excelRangeInfo.Content |> Array2D.map(fun m -> m.Value))
 
     interface IToArray2D with 
         member x.ToArray2D() =
-            ExcelFrame.toArray2DWithHeader x.AsExcelFrame
+            x.ToArray2D()
+            |> Array2D.map ConvertibleUnion.Convert
 
     interface ISurrogated with 
         member x.ToSurrogate(system) = 
-            TableSurrogate (x.ToArray2D()) :> ISurrogate
+            TableSurrogate ((x :> IToArray2D).ToArray2D()) :> ISurrogate
 
 
-and private TableSurrogate = TableSurrogate of IConvertible[,]
+and private TableSurrogate = TableSurrogate of ConvertibleUnion[,]
 with 
     interface ISurrogate with 
         member x.FromSurrogate(system) = 
@@ -460,9 +452,7 @@ with
                 excelPackage,
                 sheetName,
                 tableName,
-                ?usingITableCellMapping = usingITableCellMapping,
                 columnAutofitOptions = savingOptions.ColumnAutofitOptions,
-                automaticNumbericColumn = savingOptions.AutoNumbericColumn,
                 tableStyle = savingOptions.TableStyle)
         )
 
@@ -476,8 +466,6 @@ with
 
 [<RequireQualifiedAccess>]
 module Table =
-    let [<Literal>] ``#N/A`` = "#N/A"
-
     let mapFrame mapping (table: Table) =
         table.MapFrame mapping
 
@@ -500,8 +488,8 @@ module Table =
                 row.GetAllValues()
                 |> Seq.exists (fun v ->
                     match OptionalValue.asOption v with 
-                    | CellValue.HasSense _ -> true
-                    | _ -> false
+                    | Some v -> true
+                    | None -> false
                 )
             )
         )

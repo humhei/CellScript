@@ -1,10 +1,11 @@
 namespace CellScript.Core
 open System
+open Shrimp.FSharp.Plus
 
 [<RequireQualifiedAccess>]
 type ExcelVector =
-    | Column of list<IConvertible>
-    | Row of list<IConvertible>
+    | Column of list<ConvertibleUnion>
+    | Row of list<ConvertibleUnion>
 
 with 
     member x.Value =
@@ -18,11 +19,11 @@ with
         | ExcelVector.Row values -> fValue values |> ExcelVector.Row
 
 
-    member x.AutoNumberic() =
-        x.MapValue(fun values ->
-            match ListObj.toNumberic values with 
-            | Some v -> v
-            | None -> values) 
+    //member x.AutoNumberic() =
+    //    x.MapValue(fun values ->
+    //        match ListObj.toNumberic values with 
+    //        | Some v -> v
+    //        | None -> values) 
 
     member x.ToArray2D() =
         match x with
@@ -31,10 +32,10 @@ with
         | ExcelVector.Row values -> array2D [values]
 
     interface IToArray2D with 
-        member x.ToArray2D() = x.ToArray2D()
-            
+        member x.ToArray2D() = 
+            x.ToArray2D()
 
-    static member Convert(array2D: IConvertible[,]) =
+    static member Convert(array2D: ConvertibleUnion[,]) =
         let l1 = array2D.GetLength(0)
         let l2 = array2D.GetLength(1)
         let result =
@@ -51,7 +52,7 @@ with
    
     static member Convert(array2D: obj[,]) =
         array2D
-        |> Array2D.map fixContent
+        |> Array2D.map (fixContent >> ConvertibleUnion.Convert)
         |> ExcelVector.Convert
 
 

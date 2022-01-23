@@ -17,14 +17,12 @@ module Observations =
         | Before of StringIC
         | AfterLast 
 
-    //[<DebuggerDisplay("{AsList}")>]
-    //[<DebuggerTypeProxy(typedefof<AtLeastOneList<_>>)>]
     [<StructuredFormatDisplay("Observation {ObservationValue}")>]
-    type Observation = Observation of StringIC * IConvertible
+    type Observation = Observation of StringIC * ConvertibleUnion
     with 
         member x.ObservationValue = 
             let (Observation (key, value)) = x
-            key, value
+            key, value.Value
 
         member x.Key =
             let (Observation (key, value)) = x
@@ -34,7 +32,7 @@ module Observations =
             let (Observation (key, value)) = x
             value
 
-    let observation (a,b: IConvertible) =
+    let observation (a,b) =
         Observation (a,b)
 
 
@@ -48,7 +46,7 @@ module Observations =
         member x.Keys = x.AsList |> List.map(fun m -> m.Key)
         member x.Values = x.AsList |> List.map(fun m -> m.Value)
 
-        member x.MapValue(mapping: _ -> IConvertible) =
+        member x.MapValue(mapping) =
             x.AsList
             |> List.map(fun m ->
                 (m.Key, mapping m)
@@ -128,11 +126,11 @@ module Observations =
         member x.Add(observation, ?position) =
             x.Add(Observations [observation], ?position = position)
 
-        member x.Add(key, value: IConvertible, ?position) =
+        member x.Add(key, value, ?position) =
             x.Add(observation(key, value), ?position = position)
 
 
-    let observations (list: list<StringIC * IConvertible>) =
+    let observations (list: list<StringIC * ConvertibleUnion>) =
         let __ensureKeyNotDuplicated =
             let ditinctedKeys =
                 list

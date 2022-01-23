@@ -10,6 +10,7 @@
     <Compile Include="Extensions.fs" />
     <Compile Include="Observations.fs" />
     <Compile Include="Types.fs" />
+    <Compile Include="ExcelFrame.fs" />
     <Compile Include="Response.fs" />
     <Compile Include="ExcelArray.fs" />
     <Compile Include="Table.fs" />
@@ -21,7 +22,7 @@
     <PackageReference Include="EPPlus" Version="4.5.3.2" />
     <PackageReference Include="FParsec" Version="1.1.1" />
     <PackageReference Include="Shrimp.Akkling.Cluster.Intergraction" Version="0.2.29" />
-    <PackageReference Include="Shrimp.FSharp.Plus" Version="1.1.216" />
+    <PackageReference Include="Shrimp.FSharp.Plus" Version="1.1.228"/>
     <PackageReference Include="System.ValueTuple" Version="4.5.0" />
 
   </ItemGroup>

@@ -30,17 +30,10 @@ with
     member x.XXNumber = 600
 [<EntryPoint>]
 let main argv =
-    let m =
-        [
-            StringIC "Hello1" ==> "Yes"
-            StringIC "Hello2" ==> "Yes"
-            StringIC "Hello3" ==> "Yes"
-        ]
-        |> observations
+    let tb = Table.OfXlsxFile (XlsxFile @"D:\VsCode\Workspace\CellScript\ShortTimeTests\datas\testData.xlsx")
 
-    let p = m.Add(StringIC "Hello2.5", "Yes", DataAddingPosition.After (StringIC "Hello3"))
-
-
+    let p = Table.fillEmptyUp tb
+    let kb = p.ToArray2D()
     let rows: list<Series<_, _>> = []
 
     let m = 

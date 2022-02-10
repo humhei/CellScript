@@ -16,8 +16,6 @@ module Constrants =
     let [<Literal>] internal  DefaultTableName = "Table1"
     let [<Literal>] internal  CELL_SCRIPT_COLUMN = "CellScriptColumn"
 
-type ICellValue =
-    abstract member Convertible: IConvertible
 
 
 
@@ -25,9 +23,9 @@ module Extensions =
 
 
     [<RequireQualifiedAccess>]
-    module internal Array2D =
+    module Array2D =
 
-        let toSeqs (input: 'a[,]) =
+        let private toSeqs (input: 'a[,]) =
             let l1 = input.GetLowerBound(0)
             let u1 = input.GetUpperBound(0)
             seq {
@@ -164,9 +162,9 @@ module Extensions =
 
 
         let internal fillEmptyUp frame =
-            Frame.mapColValues (fun column ->
-                let values = 
-                    column.GetValues()
+            Frame.mapColValues (fun (column: ObjectSeries<_>) ->
+                let values: list<obj option> = 
+                    column.GetAllValues()
                     |> List.ofSeq
                     |> List.map OptionalValue.asOption
 
@@ -215,7 +213,7 @@ module Extensions =
 
     type ExcelRangeBase with
         member internal x.LoadFromArray2D(array2D: IConvertible [,]) =
-            let baseArray = Array2D.toSeqs array2D |> Seq.map (Array.ofSeq >> Array.map box)
+            let baseArray = Array2D.toLists array2D |> Seq.map (Array.ofList >> Array.map box)
             x.LoadFromArrays(baseArray)
 
 

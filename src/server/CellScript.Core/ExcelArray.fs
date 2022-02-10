@@ -24,9 +24,9 @@ with
         |> Array2D.map(fun m -> m.Value)
         |> ExcelArray.Convert
 
-    //static member Convert(array2D: obj[,]) =
-    //    let frame = ExcelFrame.ofArray2D array2D
-    //    ExcelArray(frame)
+    static member Convert(array2D: obj[,]) =
+        let frame = ExcelFrame.ofArray2D array2D
+        ExcelArray(frame)
 
 
     member x.ToArray2D() =

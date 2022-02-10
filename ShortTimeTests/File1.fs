@@ -46,6 +46,6 @@ module Module_眼镜复杂外箱贴 =
         table
 
     let storages() =
-        let tb = parse(XlsxFile @"D:\VsCode\Github\CellScript\ShortTimeTests\datas\EU80-21291  装箱明细.xlsx")
+        let tb = parse(XlsxFile @"D:\VsCode\Workspace\CellScript\ShortTimeTests\datas\EU80-21291  装箱明细.xlsx")
         tb.SaveToXlsx(@"C:\Users\Jia\Desktop\新建 Microsoft Excel 工作表.xlsx")
         ()

@@ -10,6 +10,11 @@ open Constrants
 [<AutoOpen>]
 module Types = 
 
+    
+    type ICellValue =
+        abstract member Convertible: IConvertible
+    
+
     let internal fixContent (content: obj) =
         match content with
         | :? ConvertibleUnion as v -> v.Value
@@ -21,7 +26,6 @@ module Types =
             | text -> text :> IConvertible
         | :? IConvertible as v -> 
             match v with 
-            | :? ConvertibleUnion as v -> v.Value
             | :? DBNull -> null
             | _ -> v
         | _ -> failwithf "Cannot convert to %A to iconvertible" (content.GetType())

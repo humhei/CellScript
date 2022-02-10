@@ -32,9 +32,10 @@ module Observations =
             let (Observation (key, value)) = x
             value
 
+        member x.Pair = x.Key, x.Value
+
     let observation (a,b) =
         Observation (a,b)
-
 
     type Observations = private Observations of Observation list
     with 
@@ -45,6 +46,27 @@ module Observations =
         
         member x.Keys = x.AsList |> List.map(fun m -> m.Key)
         member x.Values = x.AsList |> List.map(fun m -> m.Value)
+
+        member x.Item(key: string) =
+            let key = StringIC key
+            let r = 
+                x.AsList
+                |> List.tryFind(fun observation ->
+                    observation.Key = key
+                )
+
+            match r with 
+            | Some r -> r
+            | None -> failwithf "Cannot found key %A in observations %A" key x.AsList
+
+        member x.Item(keys: string seq) =
+            keys
+            |> List.ofSeq
+            |> List.map(fun key ->
+                x.[key]
+            )
+            |> Observations
+
 
         member x.MapValue(mapping) =
             x.AsList
@@ -82,6 +104,31 @@ module Observations =
             v
             |> List.map(fun m-> m.ObservationValue)
 
+        static member Create(list: Observation seq, checkKeysAreNotDuplicated) =
+            let list = List.ofSeq list
+            let __ensureKeyNotDuplicated =
+                match checkKeysAreNotDuplicated with 
+                | true ->
+                    let ditinctedKeys =
+                        list
+                        |> List.countBy (fun m -> m.Key)
+
+                    ditinctedKeys
+                    |> List.tryFind (fun (_ ,l) -> l <> 1)
+                    |> function
+                        | Some v ->
+                            failwithf "Cannot create Observations as duplicated keys %A are found in %A" v list
+                        | None -> ()
+                | false -> ()
+            list
+            |> Observations
+
+
+        static member Create(list: Observation seq) =
+            Observations.Create(list, false)
+
+        static member Create(list: seq<StringIC * ConvertibleUnion>) =
+            Observations.Create(list |> List.ofSeq |> List.map observation, false)
 
         static member (@@) (v1: Observations, v2: Observations) =
             v1.AsList @ v2.AsList
@@ -130,19 +177,7 @@ module Observations =
             x.Add(observation(key, value), ?position = position)
 
 
-    let observations (list: list<StringIC * ConvertibleUnion>) =
-        let __ensureKeyNotDuplicated =
-            let ditinctedKeys =
-                list
-                |> List.countBy fst
-
-            ditinctedKeys
-            |> List.tryFind (fun (_ ,l) -> l <> 1)
-            |> function
-                | Some v ->
-                    failwithf "Cannot create Observations as duplicated keys %A are found in %A" v list
-                | None -> ()
-
+    let observations (list: seq<Observation>) =
         list
-        |> List.map observation
-        |> Observations
+        |> List.ofSeq
+        |> Observations.Create

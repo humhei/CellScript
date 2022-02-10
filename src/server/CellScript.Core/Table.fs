@@ -12,6 +12,7 @@ open FParsec
 open FParsec.CharParsers
 open CellScript.Core.Constrants
 
+
 type TableXlsxSavingOptions =
     { IsOverride: bool 
       SheetName: string
@@ -56,6 +57,30 @@ module __ITableColumnKeyExtensions =
             row.GetAs<'Value>(columnKey.StringIC())
 
         [<Extension>]
+        static member TryGetBy(row: ObjectSeries<StringIC>, columnKey: ITableColumnKey<'Value>) =
+            row.TryGetAs<'Value>(columnKey.StringIC())
+
+
+        [<Extension>]
+        static member GetAsConveritableUnion(row: ObjectSeries<StringIC>, key: StringIC) =
+            match row.GetAs<obj>(key) with 
+            | :? IConvertible as convertible -> convertible 
+            | :? ICellValue as v -> v.Convertible
+            | v -> failwithf "type of cell value %A should either be ITableCellValue or IConvertible" (v.GetType())
+            |> ConvertibleUnion.Convert
+
+        [<Extension>]
+        static member TryGetAsConveritableUnion(row: ObjectSeries<StringIC>, key: StringIC) =
+            match row.TryGetAs<obj>(key) with 
+            | OptionalValue.Present convertible ->
+                match convertible with
+                | :? IConvertible as convertible -> convertible 
+                | :? ICellValue as v -> v.Convertible
+                | v -> failwithf "type of cell value %A should either be ITableCellValue or IConvertible" (v.GetType())
+                |> ConvertibleUnion.Convert
+            | OptionalValue.Missing _ -> ConvertibleUnion.Missing
+
+        [<Extension>]
         static member GetBy(row: ObjectSeries<StringIC>, columnKey: ITableColumnKeyEx<'Value>) =
             let convertible = row.GetAs<obj>(columnKey.StringIC())
             match convertible with 
@@ -64,8 +89,51 @@ module __ITableColumnKeyExtensions =
             | _ -> failwithf "type of cell value %A should either be ITableCellValue or IConvertible" (convertible.GetType())
 
         [<Extension>]
+        static member TryGetBy(row: ObjectSeries<StringIC>, columnKey: ITableColumnKeyEx<'Value>) =
+            let convertible = row.TryGetAs<obj>(columnKey.StringIC())
+            match convertible with
+            | OptionalValue.Present convertible ->
+                match convertible with
+                | :? IConvertible as convertible -> convertible |> columnKey.Unbox
+                | :? ICellValue as v -> v :?> 'Value
+                | _ -> failwithf "type of cell value %A should either be ITableCellValue or IConvertible" (convertible.GetType())
+                |> Some
+            | OptionalValue.Missing _ -> None
+
+
+        [<Extension>]
+        static member ObservationsAllEx(row: ObjectSeries<StringIC>) =
+            row.ObservationsAll
+            |> List.ofSeq
+            |> List.map(fun pair ->
+                let value =
+                    match OptionalValue.asOption pair.Value with 
+                    | Some convertible ->
+                        match convertible with
+                        | :? IConvertible as convertible -> convertible |> ConvertibleUnion.Convert
+                        | :? ICellValue as v -> v.Convertible |> ConvertibleUnion.Convert
+                        | _ -> failwithf "type of cell value %A should either be ITableCellValue or IConvertible" (convertible.GetType())
+                    | None -> ConvertibleUnion.Missing
+
+                observation(pair.Key, value)
+            )
+            |> observations
+          
+
+        [<Extension>]
         static member GetColumnBy(frame: Frame<_ ,StringIC>, columnKey: ITableColumnKey<'Value>) =
             frame.GetColumn<'Value>(columnKey.StringIC())
+
+        [<Extension>]
+        static member GetColumnAsConveritableUnion(frame: Frame<_ ,StringIC>, key: StringIC) =
+            frame.GetColumn<obj>(key)
+            |> Series.mapValues (fun convertible ->
+                match convertible with 
+                | :? IConvertible as convertible -> convertible
+                | :? ICellValue as v -> v.Convertible
+                | _ -> failwithf "type of cell value %A should either be ITableCellValue or IConvertible" (convertible.GetType())
+                |> ConvertibleUnion.Convert
+            )
 
         [<Extension>]
         static member GetColumnBy(frame: Frame<_ ,StringIC>, columnKey: ITableColumnKeyEx<'Value>) =
@@ -93,6 +161,21 @@ module __ITableColumnKeyExtensions =
                 | :? ICellValue as v -> v.Convertible :?> 'Value
                 | _ -> failwithf "type of cell value %A should either be ITableCellValue or IConvertible" (convertible.GetType())
             ))
+
+        [<Extension>]
+        static member TryGetColumnAsConveritableUnion(frame: Frame<_ ,StringIC>, key: StringIC) =
+            frame.TryGetColumn<obj>(key, Lookup.Exact)
+            |> OptionalValue.asOption
+            |> Option.map(fun series ->
+                series
+                |> Series.mapValues (fun convertible ->
+                    match convertible with 
+                    | :? IConvertible as convertible -> convertible
+                    | :? ICellValue as v -> v.Convertible
+                    | _ -> failwithf "type of cell value %A should either be ITableCellValue or IConvertible" (convertible.GetType())
+                    |> ConvertibleUnion.Convert
+                )
+            )
 
         [<Extension>]
         static member GroupRowsBy(frame: Frame<_ ,StringIC>, columnKey: ITableColumnKey<'Value>) =
@@ -210,15 +293,18 @@ with
         x.AddColumn(key, values, ?position = position)
 
     member frame.ToArray2D() = 
-        let header = frame.Headers |> Seq.map (fun m -> (m.Value :> IConvertible))
-       
+        let header = 
+            frame.Headers 
+            |> Seq.map (fun m -> (m.Value :> IConvertible))
+            |> List.ofSeq 
+
         let contents = 
             frame.AsExcelFrame
             |> ExcelFrame.toArray2D
-            |> Array2D.toSeqs
+            |> Array2D.toLists
 
         let result =
-            Seq.append [header] contents
+            List.append [header] contents
             |> array2D
     
         result
@@ -377,6 +463,12 @@ with
         Frame.ofRowsOrdinal rows
         |> Frame.mapRowKeys int
         |> Table.OfFrame
+
+    static member OfRowsOrdinal (rows: Series<StringIC, ConvertibleUnion> seq) =
+        Frame.ofRowsOrdinal rows
+        |> Frame.mapRowKeys int
+        |> Table.OfFrame
+
 
     static member OfRowsOrdinal (rows: seq<Observations>) =
         rows

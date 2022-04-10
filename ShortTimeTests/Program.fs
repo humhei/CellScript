@@ -13,7 +13,9 @@ open Akkling
 open Newtonsoft.Json
 open OfficeOpenXml
 open Shrimp.FSharp.Plus.Operators
-
+open FParsec
+open FParsec.CharParsers
+open System.Collections.Concurrent
 
 
 
@@ -30,7 +32,45 @@ with
     member x.XXNumber = 600
 [<EntryPoint>]
 let main argv =
+
+    let m = 
+        StringIC "Hello"
+
+    let texts =
+        let m =
+            List.replicate 15 ["Yes"; "PPPP"; "HSASA"; "GoGo"; "Hello1" ]
+            |> List.concat
+        m @ ["Hello"]
+        |> List.map StringIC
+
+    let cache = ConcurrentDictionary<StringIC, bool>()
+
+    let p =
+        List.replicate  1000000 m
+        |> List.map(fun m ->
+            match texts with 
+            | List.Contains m -> true
+            | _ -> false
+            //cache.GetOrAdd(m, fun _ ->
+            //    match texts with 
+            //    | List.Contains m -> true
+            //    | _ -> false
+            //)
+        )
+
+
+    let parser =
+        (pstringCI "Column" .>> pint32) 
+        <|>
+        (pstringCI "CellScriptColumn" .>> pint32) 
+
+
+    let m = run parser "CellScriptColumn1"
+
     let tb = Table.OfXlsxFile (XlsxFile @"D:\VsCode\Workspace\CellScript\ShortTimeTests\datas\testData.xlsx")
+
+    let excelPackage = new ExcelPackage(new FileInfo(@"D:\Users\Jia\Documents\MyData\Docs\2017\健耐\Markham\数据库.xlsx"))
+    let p = excelPackage.GetValidWorksheet(SheetGettingOptions.DefaultValue)
 
     let p = Table.fillEmptyUp tb
     let kb = p.ToArray2D()

@@ -130,48 +130,69 @@ module Observations =
         static member Create(list: seq<StringIC * ConvertibleUnion>) =
             Observations.Create(list |> List.ofSeq |> List.map observation, false)
 
+        static member Create(list: seq<string * ConvertibleUnion>) =
+            Observations.Create(list |> List.ofSeq |> List.mapFst StringIC |> List.map observation, false)
+
+        static member Empty = Observations []
+
         static member (@@) (v1: Observations, v2: Observations) =
             v1.AsList @ v2.AsList
             |> Observations
 
         member x.Add(obsevations: Observations, ?position) =
-            let position = defaultArg position DataAddingPosition.AfterLast
-            match position with 
-            | DataAddingPosition.BeforeFirst -> 
-                obsevations @@ x  
-
-            | DataAddingPosition.AfterLast ->
-                x @@ obsevations
-
+            match obsevations.AsList.Length with 
+            | 0 -> x
             | _ ->
-                let originKeys = 
-                    x.AsList
-                    |> List.map(fun m -> m.Key)
+                let position = defaultArg position DataAddingPosition.AfterLast
+                match position with 
+                | DataAddingPosition.BeforeFirst -> 
+                    obsevations @@ x  
 
-                let addingIndex = 
-                    match position with 
-                    | DataAddingPosition.BeforeFirst  
-                    | DataAddingPosition.AfterLast -> failwith "Invalid token"
-                    | DataAddingPosition.ByIndex i -> i 
-                    | DataAddingPosition.After k ->
-                        originKeys
-                        |> List.tryFindIndex(fun (k') -> k' = k)
-                        |> function
-                            | Some i -> i
-                            | None -> failwithf "Invalid data adding position %A, all keys are %A" position originKeys
+                | DataAddingPosition.AfterLast ->
+                    x @@ obsevations
 
-                    | DataAddingPosition.Before k ->
-                        originKeys
-                        |> List.tryFindIndex(fun (k') -> k' = k)
-                        |> function
-                            | Some i -> i-1
-                            | None -> failwithf "Invalid data adding position %A, all keys are %A" position originKeys
+                | _ ->
+                    let originKeys = 
+                        x.AsList
+                        |> List.map(fun m -> m.Key)
 
-                x.AsList.[0..addingIndex] @ obsevations.AsList @ x.AsList.[addingIndex+1..]
-                |> Observations
+                    let addingIndex = 
+                        match position with 
+                        | DataAddingPosition.BeforeFirst  
+                        | DataAddingPosition.AfterLast -> failwith "Invalid token"
+                        | DataAddingPosition.ByIndex i -> i 
+                        | DataAddingPosition.After k ->
+                            originKeys
+                            |> List.tryFindIndex(fun (k') -> k' = k)
+                            |> function
+                                | Some i -> i
+                                | None -> failwithf "Invalid data adding position %A, all keys are %A" position originKeys
+
+                        | DataAddingPosition.Before k ->
+                            originKeys
+                            |> List.tryFindIndex(fun (k') -> k' = k)
+                            |> function
+                                | Some i -> i-1
+                                | None -> failwithf "Invalid data adding position %A, all keys are %A" position originKeys
+
+                    x.AsList.[0..addingIndex] @ obsevations.AsList @ x.AsList.[addingIndex+1..]
+                    |> Observations
                 
         member x.Add(observation, ?position) =
             x.Add(Observations [observation], ?position = position)
+
+        member x.TryAdd(observations: Observations, ?position) =
+            match observations.AsList.Length with 
+            | 0 -> x
+            | _ ->
+                let addingObservations =
+                    let originKeys = x.Keys
+                    observations.AsList
+                    |> List.filter(fun m -> not (List.contains m.Key originKeys))
+                    |> Observations.Create
+
+                x.Add(addingObservations, ?position = position)
+
 
         member x.Add(key, value, ?position) =
             x.Add(observation(key, value), ?position = position)

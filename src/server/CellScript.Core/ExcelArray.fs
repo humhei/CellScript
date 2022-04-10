@@ -32,6 +32,8 @@ with
     member x.ToArray2D() =
         ExcelFrame.toArray2D x.AsExcelFrame
         
+    member private x.FormatText = 
+        x.AsFrame.Format(50)
 
     interface IToArray2D with 
         member x.ToArray2D() =

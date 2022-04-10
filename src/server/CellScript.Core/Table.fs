@@ -11,6 +11,7 @@ open System.Runtime.CompilerServices
 open FParsec
 open FParsec.CharParsers
 open CellScript.Core.Constrants
+open System.Collections.Generic
 
 
 type TableXlsxSavingOptions =
@@ -18,15 +19,17 @@ type TableXlsxSavingOptions =
       SheetName: string
       ColumnAutofitOptions: ColumnAutofitOptions
       TableName: string
-      TableStyle: Table.TableStyles }
+      TableStyle: Table.TableStyles
+      AutomaticNumbericColumn: bool }
 with 
-    static member Create(?isOverride: bool, ?sheetName: string, ?columnAutofitOptions, ?tableName: string, ?tableStyle) =
+    static member Create(?isOverride: bool, ?sheetName: string, ?columnAutofitOptions, ?tableName: string, ?tableStyle, ?automaticNumbericColumn) =
         {
             IsOverride = defaultArg isOverride true
             SheetName = defaultArg sheetName SHEET1
             ColumnAutofitOptions = defaultArg columnAutofitOptions ColumnAutofitOptions.DefaultValue
             TableName = defaultArg tableName DefaultTableName
             TableStyle = defaultArg tableStyle <| DefaultTableStyle()
+            AutomaticNumbericColumn = defaultArg automaticNumbericColumn false
         }
 
     static member DefaultValue = TableXlsxSavingOptions.Create()       
@@ -50,15 +53,31 @@ type ITableColumnKeyEx<'Value when 'Value :> ICellValue> =
 [<AutoOpen>]
 module __ITableColumnKeyExtensions =
 
+    open Deedle
     [<Extension>]
     type _ITableColumnKeyExtensions = 
+        [<Extension>]
+        static member TryGetAsEx<'Value>(row: ObjectSeries<StringIC>, key: StringIC, ?checkKeyValid): OptionalValue<'Value> =
+            match defaultArg checkKeyValid false with 
+            | true ->
+                match row.Index.Locate(key) with 
+                | EqualTo Addressing.Address.invalid -> 
+                    raise (new KeyNotFoundException(sprintf "The key %O is not present in the index" key))
+                    
+                | addr -> 
+                    row.Vector.GetValue(addr)
+                    |> OptionalValue.map (fun v -> 
+                        let conversionKind = ConversionKind.Flexible
+                        Deedle.Internal.Convert.convertType<'Value> conversionKind v)
+            | false -> row.TryGetAs<'Value>(key)
+
         [<Extension>]
         static member GetBy(row: ObjectSeries<StringIC>, columnKey: ITableColumnKey<'Value>) =
             row.GetAs<'Value>(columnKey.StringIC())
 
         [<Extension>]
-        static member TryGetBy(row: ObjectSeries<StringIC>, columnKey: ITableColumnKey<'Value>) =
-            row.TryGetAs<'Value>(columnKey.StringIC())
+        static member TryGetBy(row: ObjectSeries<StringIC>, columnKey: ITableColumnKey<'Value>, ?checkKeyValid) =
+            row.TryGetAsEx<'Value>(columnKey.StringIC(), ?checkKeyValid = checkKeyValid)
 
 
         [<Extension>]
@@ -70,8 +89,8 @@ module __ITableColumnKeyExtensions =
             |> ConvertibleUnion.Convert
 
         [<Extension>]
-        static member TryGetAsConveritableUnion(row: ObjectSeries<StringIC>, key: StringIC) =
-            match row.TryGetAs<obj>(key) with 
+        static member TryGetAsConveritableUnion(row: ObjectSeries<StringIC>, key: StringIC, ?checkKeyValid) =
+            match row.TryGetAsEx<obj>(key, ?checkKeyValid = checkKeyValid) with 
             | OptionalValue.Present convertible ->
                 match convertible with
                 | :? IConvertible as convertible -> convertible 
@@ -89,8 +108,8 @@ module __ITableColumnKeyExtensions =
             | _ -> failwithf "type of cell value %A should either be ITableCellValue or IConvertible" (convertible.GetType())
 
         [<Extension>]
-        static member TryGetBy(row: ObjectSeries<StringIC>, columnKey: ITableColumnKeyEx<'Value>) =
-            let convertible = row.TryGetAs<obj>(columnKey.StringIC())
+        static member TryGetBy(row: ObjectSeries<StringIC>, columnKey: ITableColumnKeyEx<'Value>, ?checkKeyValid) =
+            let convertible = row.TryGetAsEx<obj>(columnKey.StringIC(), ?checkKeyValid = checkKeyValid)
             match convertible with
             | OptionalValue.Present convertible ->
                 match convertible with
@@ -308,6 +327,9 @@ with
             |> array2D
     
         result
+
+    member private x.FormatText = 
+        x.AsFrame.Format(50)
     
     member x.ToExcelArray() =
         let array2D = x.ToArray2D()
@@ -321,7 +343,8 @@ with
          tableName,
          ?addr, 
          ?columnAutofitOptions,
-         ?tableStyle) =
+         ?tableStyle,
+         ?automaticNumbericColumn) =
 
         let worksheet = 
             let worksheets = excelPackage.Workbook.Worksheets
@@ -334,13 +357,16 @@ with
                     |> VisibleExcelWorksheet.Create
 
         let array2D = x.ToArray2D()
+            
+
 
         worksheet.LoadFromArraysAsTable(
             array2D,
             columnAutofitOptions = defaultArg columnAutofitOptions ColumnAutofitOptions.DefaultValue,
             tableName = tableName, 
             tableStyle = defaultArg tableStyle (DefaultTableStyle()),
-            ?addr = addr
+            ?addr = addr,
+            ?automaticNumbericColumn = automaticNumbericColumn
         )
 
         array2D
@@ -364,7 +390,8 @@ with
             savingOptions.SheetName,
             savingOptions.TableName,
             columnAutofitOptions = savingOptions.ColumnAutofitOptions,
-            tableStyle = savingOptions.TableStyle)
+            tableStyle = savingOptions.TableStyle,
+            automaticNumbericColumn = savingOptions.AutomaticNumbericColumn)
 
         excelPackage.Save()
         excelPackage.Dispose()
@@ -545,7 +572,8 @@ with
                 sheetName,
                 tableName,
                 columnAutofitOptions = savingOptions.ColumnAutofitOptions,
-                tableStyle = savingOptions.TableStyle)
+                tableStyle = savingOptions.TableStyle,
+                automaticNumbericColumn = savingOptions.AutomaticNumbericColumn)
         )
 
         excelPackage.Save()
@@ -564,6 +592,10 @@ module Table =
     let fillEmptyUp (table: Table) =
         table 
         |> mapFrame Frame.fillEmptyUp
+
+    let fillEmptyUpForColumns columnKeys (table: Table) =
+        table 
+        |> mapFrame (Frame.fillEmptyUpForColumns columnKeys)
 
     let splitRowToMany addtionalHeaders mapping (table: Table) =
         let addtionalHeaders =

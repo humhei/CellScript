@@ -160,6 +160,42 @@ module Extensions =
                 (chooser colKey).Value
             )
 
+        let internal fillEmptyUpForColumns (columnKeys: _ list) frame =
+            Frame.mapCols (fun colKey (column: ObjectSeries<_>) ->
+                match List.contains colKey columnKeys with 
+                | true ->
+                    let values: list<obj option> = 
+                        column.GetAllValues()
+                        |> List.ofSeq
+                        |> List.map OptionalValue.asOption
+
+                    let rec loop values accum accumValues =
+                        match values with 
+                        | h :: t ->
+                            match h with 
+                            | Some v -> loop t (Some v) (v :: accumValues)
+                            | None -> 
+                                match accum with 
+                                | Some accum ->
+                                    loop t (Some accum) (accum :: accumValues)
+                                | None -> 
+                                    match h with 
+                                    | Some h ->
+                                        loop t None (h :: accumValues)
+                                    | None -> loop t None (null :: accumValues)
+
+                        | [] -> accumValues
+
+                    loop values None []
+                    |> List.rev
+                    |> Series.ofValues
+                    |> Series.indexWith (column.Keys)
+
+                | false ->
+                    column :> Series<_, _>
+
+                ) frame
+
 
         let internal fillEmptyUp frame =
             Frame.mapColValues (fun (column: ObjectSeries<_>) ->

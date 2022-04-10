@@ -10,7 +10,22 @@ open Constrants
 [<AutoOpen>]
 module Types = 
 
-    
+    let private fixTableName (tableName: string) =
+        tableName
+            .Replace(' ','_')
+
+    type ValidTableName (v: string) =
+        inherit POCOBaseV<StringIC>(StringIC(fixTableName v))
+
+        member x.OriginName = v
+
+        member x.StringIC = x.VV.Value
+
+        member x.Name = x.StringIC.Value
+
+        static member Convert(tableName: string) = ValidTableName(tableName).Name
+
+
     type ICellValue =
         abstract member Convertible: IConvertible
     
@@ -94,13 +109,34 @@ module Types =
                 sheet.Cells.[indexer]
 
 
-        member x.LoadFromArraysAsTable(arrays: IConvertible [, ], ?columnAutofitOptions, ?tableName: string, ?tableStyle: Table.TableStyles, ?addr) =
+        member x.LoadFromArraysAsTable(arrays: IConvertible [, ], ?columnAutofitOptions, ?tableName: string, ?tableStyle: Table.TableStyles, ?addr, ?automaticNumbericColumn) =
+            let arrays =
+                match defaultArg automaticNumbericColumn false with 
+                | false -> arrays
+                | true ->
+                    arrays
+                    |> Array2D.map(fun m ->
+                        match m with 
+                        | null -> m
+                        | _ ->
+                            match System.Double.TryParse (m.ToString()) with 
+                            | true, v -> v :> IConvertible
+                            | false, _ -> m
+                    )
+
+            
             let worksheet = x.Value
             let addr = defaultArg addr "A1"
 
             let range = worksheet.Cells.[addr].LoadFromArray2D(arrays) 
                 
-            let tab = worksheet.Tables.Add(ExcelAddress range.Address, defaultArg tableName DefaultTableName)
+            let tab = 
+                let tableName =
+                    match tableName with 
+                    | Some tableName -> tableName
+                    | None -> DefaultTableName
+
+                worksheet.Tables.Add(ExcelAddress range.Address, tableName)
 
             tab.TableStyle <- 
                 defaultArg tableStyle <| DefaultTableStyle()
@@ -126,12 +162,7 @@ module Types =
 
                     
     /// both visible and having contents
-    type ValidExcelWorksheet(visibleExcelWorksheet: VisibleExcelWorksheet) =
-        do
-            match visibleExcelWorksheet.Value.Dimension with
-            | null -> raise(SheetContentsEmptyException (sprintf "Cannot create VisibleExcelWorksheet: Contents in sheet %s is empty" visibleExcelWorksheet.Value.Name))
-            | _ -> ()
-
+    type ValidExcelWorksheet private (visibleExcelWorksheet: VisibleExcelWorksheet) =
 
         member x.Value = visibleExcelWorksheet.Value
 
@@ -141,18 +172,30 @@ module Types =
 
         member x.GetRange rangeGettingOptions = visibleExcelWorksheet.GetRange(rangeGettingOptions)
 
-        new (excelworksheet: ExcelWorksheet) =
-            ValidExcelWorksheet(VisibleExcelWorksheet.Create(excelworksheet))
+
+        static member TryCreate(visibleExcelWorksheet: VisibleExcelWorksheet) =
+            match visibleExcelWorksheet.Value.Dimension with
+            | null -> Result.Error (sprintf "Cannot create VisibleExcelWorksheet: Contents in sheet %s is empty" visibleExcelWorksheet.Value.Name)
+            | _ -> 
+                Result.Ok (ValidExcelWorksheet visibleExcelWorksheet)
+
+        static member Create(visibleExcelWorksheet: VisibleExcelWorksheet) =
+            ValidExcelWorksheet(visibleExcelWorksheet)
+
+        static member Create (excelworksheet: ExcelWorksheet) =
+            ValidExcelWorksheet.Create(VisibleExcelWorksheet.Create(excelworksheet))
         
 
 
-
+    [<RequireQualifiedAccess>]
     type SheetGettingOptions =
         | SheetName of StringIC
         | SheetIndex of int
         | SheetNameOrSheetIndex of sheetName: StringIC * index: int
     with 
-        static member DefaultValue = SheetGettingOptions.SheetIndex 0
+        static member DefaultValue = 
+            //SheetGettingOptions.SheetIndex 0
+            SheetGettingOptions.SheetNameOrSheetIndex (StringIC SHEET1, 0)
 
     type ExcelPackage with
 
@@ -186,15 +229,13 @@ module Types =
 
         member excelPackage.GetValidWorksheet (options) =
             excelPackage.GetVisibleWorksheet(options)
-            |> ValidExcelWorksheet
+            |> ValidExcelWorksheet.Create
 
         member excelPackage.GetValidWorksheets() =
             excelPackage.GetVisibleWorksheets()
-            |> Seq.map ValidExcelWorksheet
             |> List.ofSeq
-            |> function
-                | [] -> failwithf "Cannot get valid worksheets from %s" excelPackage.File.FullName
-                | worksheets -> AtLeastOneList.Create worksheets
+            |> List.choose (ValidExcelWorksheet.TryCreate >> Result.toOption)
+            |> List.ofSeq
 
     type ExcelRangeContactInfo =
         { ColumnFirst: int

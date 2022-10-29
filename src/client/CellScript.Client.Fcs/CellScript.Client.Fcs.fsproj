@@ -20,7 +20,7 @@
     <ProjectReference Include="..\CellScript.Client.Desktop\CellScript.Client.Desktop.fsproj" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Update="FSharp.Core" Version="4.7.0" />
+    <PackageReference Update="FSharp.Core" Version="5.0.1" />
     <PackageReference Update="System.ValueTuple" Version="4.5.0" />
   </ItemGroup>
   <Import Project="..\..\..\paket-files\client\github.com\humhei\AddIn_Package_Updated\ExcelDna.AddIn\tools\ExcelDna.AddIn.targets" />

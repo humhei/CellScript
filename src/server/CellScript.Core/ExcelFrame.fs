@@ -32,14 +32,11 @@ module ExcelFrame =
             |> ExcelFrame
             |> ensureDatasValid
     
+ 
         let toArray2D (ExcelFrame frame): IConvertible [,] =
             frame.ToArray2D(null)
             |> Array2D.map(fun (m: obj) ->
-                match m with 
-                | null -> null 
-                | :? IConvertible as convertible -> convertible 
-                | :? ICellValue as v -> v.Convertible 
-                | _ -> failwithf "type of cell value %A should either be ICellValue or IConvertible" (m.GetType())
+                readContentAsConvertible m
             )
             
     
@@ -51,7 +48,7 @@ module ExcelFrame =
     
         let ofArray2D (array2D: obj[,]) =
             array2D
-            |> Array2D.map fixContent
+            |> Array2D.map fixRawContent
             |> ofArray2DWithConvitable
     
 

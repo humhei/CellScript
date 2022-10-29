@@ -17,7 +17,18 @@ open FParsec
 open FParsec.CharParsers
 open System.Collections.Concurrent
 
+let private hyperionSerializer = Hyperion.Serializer()
+let private serialize (v: obj) =
+    use stream = new MemoryStream()
+    hyperionSerializer.Serialize(v, stream)
+    let bytes = stream.ToArray()
+    bytes
 
+let private deserialize (bytes: byte []) =
+    use stream = new MemoryStream(bytes)
+
+    hyperionSerializer.Deserialize(stream)
+    |> unbox
 
 type KK =
     | A
@@ -33,42 +44,52 @@ with
 [<EntryPoint>]
 let main argv =
 
-    let m = 
-        StringIC "Hello"
+    //let m = 
+    //    StringIC "Hello"
 
-    let texts =
-        let m =
-            List.replicate 15 ["Yes"; "PPPP"; "HSASA"; "GoGo"; "Hello1" ]
-            |> List.concat
-        m @ ["Hello"]
-        |> List.map StringIC
+    //let texts =
+    //    let m =
+    //        List.replicate 15 ["Yes"; "PPPP"; "HSASA"; "GoGo"; "Hello1" ]
+    //        |> List.concat
+    //    m @ ["Hello"]
+    //    |> List.map StringIC
 
-    let cache = ConcurrentDictionary<StringIC, bool>()
+    //let cache = ConcurrentDictionary<StringIC, bool>()
 
-    let p =
-        List.replicate  1000000 m
-        |> List.map(fun m ->
-            match texts with 
-            | List.Contains m -> true
-            | _ -> false
-            //cache.GetOrAdd(m, fun _ ->
-            //    match texts with 
-            //    | List.Contains m -> true
-            //    | _ -> false
-            //)
-        )
-
-
-    let parser =
-        (pstringCI "Column" .>> pint32) 
-        <|>
-        (pstringCI "CellScriptColumn" .>> pint32) 
+    //let p =
+    //    List.replicate  1000000 m
+    //    |> List.map(fun m ->
+    //        match texts with 
+    //        | List.Contains m -> true
+    //        | _ -> false
+    //        //cache.GetOrAdd(m, fun _ ->
+    //        //    match texts with 
+    //        //    | List.Contains m -> true
+    //        //    | _ -> false
+    //        //)
+    //    )
 
 
-    let m = run parser "CellScriptColumn1"
+    //let parser =
+    //    (pstringCI "Column" .>> pint32) 
+    //    <|>
+    //    (pstringCI "CellScriptColumn" .>> pint32) 
 
-    let tb = Table.OfXlsxFile (XlsxFile @"D:\VsCode\Workspace\CellScript\ShortTimeTests\datas\testData.xlsx")
 
+    //let m = run parser "CellScriptColumn1"
+
+
+    let tb = Table.OfXlsxFile (
+        XlsxFile @"D:\Users\Jia\Documents\MyData\Docs\2017\健耐\Treeker\Input\Orders\健耐 22TW30\Sheet1@健耐 22TW30.output.xlsx"
+    )
+
+    tb.SaveToXlsx(@"C:\Users\Administrator\Desktop\新建 Microsoft Excel Worksheet.xlsx", TableXlsxSavingOptions.Create(cellFormat = CellSavingFormat.ODBC))
+
+    //let m = serialize tb
+    //File.WriteAllBytes(@"C:\Users\Jia\Desktop\新建文本文档.txt", m)
+    let m = File.ReadAllBytes(@"C:\Users\Jia\Desktop\新建文本文档.txt")
+    let p1 = deserialize m
+    let p2 = deserialize m
     let excelPackage = new ExcelPackage(new FileInfo(@"D:\Users\Jia\Documents\MyData\Docs\2017\健耐\Markham\数据库.xlsx"))
     let p = excelPackage.GetValidWorksheet(SheetGettingOptions.DefaultValue)
 

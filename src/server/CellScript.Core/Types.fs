@@ -1,4 +1,5 @@
 namespace CellScript.Core
+#nowarn "0104"
 open Deedle
 open Extensions
 open System
@@ -30,7 +31,7 @@ module Types =
         abstract member Convertible: IConvertible
     
 
-    let internal fixContent (content: obj) =
+    let internal fixRawContent (content: obj) =
         match content with
         | :? ConvertibleUnion as v -> v.Value
         | null -> null
@@ -38,12 +39,19 @@ module Types =
         | :? string as text -> 
             match text.Trim() with 
             | "" -> null 
-            | text -> text :> IConvertible
+            | _ -> text :> IConvertible
         | :? IConvertible as v -> 
             match v with 
             | :? DBNull -> null
             | _ -> v
         | _ -> failwithf "Cannot convert to %A to iconvertible" (content.GetType())
+
+    let internal readContentAsConvertible (content: obj) =
+        match content with 
+        | null -> null 
+        | :? IConvertible as convertible -> convertible 
+        | :? ICellValue as v -> v.Convertible 
+        | _ -> failwithf "type of cell value %A should either be ICellValue or IConvertible" (content.GetType())
 
 
     type ExcelPackageWithXlsxFile = private ExcelPackageWithXlsxFile of XlsxFile * ExcelPackage
@@ -81,8 +89,16 @@ module Types =
         | None
         | AutoFit of minimumSize: float * maximumSize: float
     with    
+        /// ColumnAutofitOptions.AutoFit(10., 50.)
         static member DefaultValue = ColumnAutofitOptions.AutoFit(10., 50.)
 
+    
+    [<RequireQualifiedAccess>]
+    type CellSavingFormat =
+        | AutomaticNumberic 
+        | AllText of excludingCols: StringIC list
+        | KeepOrigin 
+        | ODBC
 
 
     type SheetContentsEmptyException(error: string) =
@@ -109,20 +125,8 @@ module Types =
                 sheet.Cells.[indexer]
 
 
-        member x.LoadFromArraysAsTable(arrays: IConvertible [, ], ?columnAutofitOptions, ?tableName: string, ?tableStyle: Table.TableStyles, ?addr, ?automaticNumbericColumn) =
-            let arrays =
-                match defaultArg automaticNumbericColumn false with 
-                | false -> arrays
-                | true ->
-                    arrays
-                    |> Array2D.map(fun m ->
-                        match m with 
-                        | null -> m
-                        | _ ->
-                            match System.Double.TryParse (m.ToString()) with 
-                            | true, v -> v :> IConvertible
-                            | false, _ -> m
-                    )
+        member x.LoadFromArraysAsTable(arrays: IConvertible [, ], ?columnAutofitOptions, ?tableName: string, ?tableStyle: Table.TableStyles, ?addr) =
+
 
             
             let worksheet = x.Value
@@ -172,6 +176,33 @@ module Types =
 
         member x.GetRange rangeGettingOptions = visibleExcelWorksheet.GetRange(rangeGettingOptions)
 
+        member sheet.ReadDatas(rangeGettingOptions) =
+            let sheet = sheet.VisibleExcelWorksheet
+            
+            use range = sheet.GetRange(rangeGettingOptions)
+    
+            let rowStart = range.Start.Row
+            let rowEnd = range.End.Row
+            let columnStart = range.Start.Column
+            let columnEnd = range.End.Column
+    
+            let content =
+                array2D
+                    [ for i = rowStart to rowEnd do 
+                        yield
+                            [ for j = columnStart to columnEnd do yield fixRawContent range.[i,j].Value ]
+                    ] 
+                |> Array2D.map ConvertibleUnion.Convert
+    
+            {|
+                RowStart = rowStart
+                RowEnd = rowEnd
+                ColumnStart = columnStart
+                ColumnEnd = columnEnd
+                Content = content
+            |}
+
+
 
         static member TryCreate(visibleExcelWorksheet: VisibleExcelWorksheet) =
             match visibleExcelWorksheet.Value.Dimension with
@@ -193,6 +224,7 @@ module Types =
         | SheetIndex of int
         | SheetNameOrSheetIndex of sheetName: StringIC * index: int
     with 
+        /// SheetGettingOptions.SheetNameOrSheetIndex (StringIC SHEET1, 0)
         static member DefaultValue = 
             //SheetGettingOptions.SheetIndex 0
             SheetGettingOptions.SheetNameOrSheetIndex (StringIC SHEET1, 0)
@@ -217,7 +249,12 @@ module Types =
 
             let excelworksheet = 
                 match options with 
-                | SheetGettingOptions.SheetName sheetName -> excelPackage.Workbook.Worksheets.[sheetName.Value]
+                | SheetGettingOptions.SheetName sheetName -> 
+                    let sheet = excelPackage.Workbook.Worksheets.[sheetName.Value]
+                    match sheet with 
+                    | null -> failwithf "No sheet named %s was found in %A" sheetName.Value (excelPackage.File)
+                    | _ -> sheet
+
                 | SheetGettingOptions.SheetIndex index -> getVisibleSheetByIndex index
                 | SheetGettingOptions.SheetNameOrSheetIndex (sheetName, index) ->
                     match Seq.tryFind (fun (worksheet: ExcelWorksheet) -> StringIC worksheet.Name = sheetName && worksheet.Hidden = eWorkSheetHidden.Visible) excelPackage.Workbook.Worksheets with 
@@ -231,10 +268,12 @@ module Types =
             excelPackage.GetVisibleWorksheet(options)
             |> ValidExcelWorksheet.Create
 
-        member excelPackage.GetValidWorksheets() =
+        member excelPackage.GetValidWorksheets_Seq() =
             excelPackage.GetVisibleWorksheets()
-            |> List.ofSeq
-            |> List.choose (ValidExcelWorksheet.TryCreate >> Result.toOption)
+            |> Seq.choose (ValidExcelWorksheet.TryCreate >> Result.toOption)
+
+        member excelPackage.GetValidWorksheets() =
+            excelPackage.GetValidWorksheets_Seq()
             |> List.ofSeq
 
     type ExcelRangeContactInfo =
@@ -260,35 +299,20 @@ module Types =
     
         let cellAddress (xlRef: ExcelRangeContactInfo) = xlRef.CellAddress
     
-        let readFromExcelPackages (rangeGettingArg: RangeGettingOptions) (sheetGettingArgs: SheetGettingOptions) (excelPackage: ExcelPackageWithXlsxFile) =
+        let readFromExcelPackages (rangeGettingOptions: RangeGettingOptions) (sheetGettingArgs: SheetGettingOptions) (excelPackage: ExcelPackageWithXlsxFile) =
             let xlsxFile = excelPackage.XlsxFile
             let excelPackage = excelPackage.ExcelPackage
             let sheet = excelPackage.GetValidWorksheet sheetGettingArgs
-
-            let sheet = sheet.VisibleExcelWorksheet
-            
-            use range = sheet.GetRange(rangeGettingArg)
     
-            let rowStart = range.Start.Row
-            let rowEnd = range.End.Row
-            let columnStart = range.Start.Column
-            let columnEnd = range.End.Column
+            let datas = sheet.ReadDatas(rangeGettingOptions) 
     
-            let content =
-                array2D
-                    [ for i = rowStart to rowEnd do 
-                        yield
-                            [ for j = columnStart to columnEnd do yield fixContent range.[i,j].Value ]
-                    ] 
-                |> Array2D.map ConvertibleUnion.Convert
-    
-            { ColumnFirst = columnStart
-              RowFirst = rowStart
-              ColumnLast = columnEnd
-              RowLast = rowEnd
+            { ColumnFirst = datas.ColumnStart
+              RowFirst = datas.RowStart
+              ColumnLast = datas.ColumnEnd
+              RowLast = datas.RowEnd
               XlsxFile = xlsxFile
               SheetName = sheet.Name
-              Content = content }   
+              Content = datas.Content }   
 
         let readFromFile (rangeGettingArg: RangeGettingOptions) (sheetGettingArgs: SheetGettingOptions) (xlsxFile: XlsxFile) =
             use excelPackage = ExcelPackageWithXlsxFile.Create xlsxFile

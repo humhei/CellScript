@@ -14,23 +14,26 @@ open CellScript.Core.Constrants
 open System.Collections.Generic
 
 
+
 type TableXlsxSavingOptions =
     { IsOverride: bool 
       SheetName: string
       ColumnAutofitOptions: ColumnAutofitOptions
       TableName: string
       TableStyle: Table.TableStyles
-      AutomaticNumbericColumn: bool }
+      CellSavingFormat: CellSavingFormat }
 with 
-    static member Create(?isOverride: bool, ?sheetName: string, ?columnAutofitOptions, ?tableName: string, ?tableStyle, ?automaticNumbericColumn) =
+    static member Create(?isOverride: bool, ?sheetName: string, ?columnAutofitOptions, ?tableName: string, ?tableStyle, ?cellFormat) =
         {
             IsOverride = defaultArg isOverride true
             SheetName = defaultArg sheetName SHEET1
             ColumnAutofitOptions = defaultArg columnAutofitOptions ColumnAutofitOptions.DefaultValue
             TableName = defaultArg tableName DefaultTableName
             TableStyle = defaultArg tableStyle <| DefaultTableStyle()
-            AutomaticNumbericColumn = defaultArg automaticNumbericColumn false
+            CellSavingFormat = defaultArg cellFormat CellSavingFormat.KeepOrigin
         }
+
+
 
     static member DefaultValue = TableXlsxSavingOptions.Create()       
 
@@ -311,6 +314,12 @@ with
         let values = List.replicate x.AsFrame.RowCount value
         x.AddColumn(key, values, ?position = position)
 
+    member x.AddColumn_FirstRow(key, value: 'a, ?position) =
+        let values = 
+            value :: (List.replicate (x.AsFrame.RowCount-1) (Unchecked.defaultof<'a>))
+        x.AddColumn(key, values, ?position = position)
+
+
     member frame.ToArray2D() = 
         let header = 
             frame.Headers 
@@ -344,7 +353,7 @@ with
          ?addr, 
          ?columnAutofitOptions,
          ?tableStyle,
-         ?automaticNumbericColumn) =
+         ?cellFormat) =
 
         let worksheet = 
             let worksheets = excelPackage.Workbook.Worksheets
@@ -356,8 +365,73 @@ with
                     excelPackage.Workbook.Worksheets.Add(sheetName)
                     |> VisibleExcelWorksheet.Create
 
+        let cellFormat = defaultArg cellFormat CellSavingFormat.KeepOrigin
+
+
+        let x = 
+            x.MapFrame(fun frame ->
+                let frame = Frame.indexRowsOrdinally frame
+
+                frame
+                |> Frame.mapCols(fun colkey colValues ->
+                    match cellFormat with 
+                    | CellSavingFormat.KeepOrigin -> colValues :> ISeries<_>
+                    | CellSavingFormat.ODBC -> 
+                        let colValues = 
+                            colValues.Values
+                            |> List.ofSeq
+                            |> List.map readContentAsConvertible 
+
+                        let numbers =
+                            colValues
+                            |> List.choose(fun m ->
+                                match System.Double.TryParse (m.ToString()) with 
+                                | true, v -> Some (v)
+                                | false, _ -> None
+                            )
+
+                        match numbers.Length = colValues.Length with 
+                        | true -> 
+                            Series.ofValues numbers :> ISeries<_>
+                            
+                        | false ->
+                            let series = 
+                                colValues
+                                |> List.map (fun m ->
+                                    match m with 
+                                    | null -> ""
+                                    | _ -> string m
+                                )
+                                |> Series.ofValues
+
+                            series :> ISeries<_>
+
+                        
+
+                     
+                    | CellSavingFormat.AutomaticNumberic ->
+                        colValues
+                        |> Series.mapValues(fun m ->
+                            let m = readContentAsConvertible m
+                            match System.Double.TryParse (m.ToString()) with 
+                            | true, v -> v :> IConvertible
+                            | false, _ -> m
+                        ) :> ISeries<_>
+
+                    | CellSavingFormat.AllText excludings ->
+                        match List.contains colkey excludings with 
+                        | true -> colValues :> ISeries<_>
+                        | false ->
+                            colValues
+                            |> Series.mapValues(fun m ->
+                                let m = readContentAsConvertible m
+                                m.ToString() :> IConvertible
+                            ) :> ISeries<_>
+                )
+            )
+
+
         let array2D = x.ToArray2D()
-            
 
 
         worksheet.LoadFromArraysAsTable(
@@ -365,15 +439,18 @@ with
             columnAutofitOptions = defaultArg columnAutofitOptions ColumnAutofitOptions.DefaultValue,
             tableName = tableName, 
             tableStyle = defaultArg tableStyle (DefaultTableStyle()),
-            ?addr = addr,
-            ?automaticNumbericColumn = automaticNumbericColumn
+            ?addr = addr
         )
 
         array2D
         |> Array2D.iteri(fun row col v ->
             match v with 
             | :? DateTime -> worksheet.Value.Cells.[row+1, col+1].Style.Numberformat.Format <- System.Globalization.DateTimeFormatInfo.CurrentInfo.ShortDatePattern
-            | _ -> ()
+            | _ -> 
+                //match cellFormat with 
+                //| CellSavingFormat.AllText -> 
+                    
+                ()
         )
 
 
@@ -391,7 +468,7 @@ with
             savingOptions.TableName,
             columnAutofitOptions = savingOptions.ColumnAutofitOptions,
             tableStyle = savingOptions.TableStyle,
-            automaticNumbericColumn = savingOptions.AutomaticNumbericColumn)
+            cellFormat = savingOptions.CellSavingFormat)
 
         excelPackage.Save()
         excelPackage.Dispose()
@@ -464,13 +541,13 @@ with
 
     static member OfArray2D (array2D: obj[,]) =
         array2D
-        |> Array2D.map fixContent
+        |> Array2D.map fixRawContent
         |> Table.OfArray2D
 
 
     static member private OfFrame (frame: Frame<int, StringIC>) =
         frame
-        |> Frame.mapValues fixContent
+        |> Frame.mapValues fixRawContent
         |> ExcelFrame
         |> Table.Table
 
@@ -485,6 +562,15 @@ with
         |> Frame.mapColKeys StringIC
         |> Table.OfFrame
 
+    static member OfColumns (columns: seq<StringIC * Series<int, ConvertibleUnion>>) =
+        let columns =
+            columns
+            |> Seq.map(fun (key, series) ->
+                key, series |> Series.mapValues (fun m -> m.Value)
+            )
+
+        (Frame.ofColumns columns)
+        |> Table.OfFrame
 
     static member private OfRowsOrdinal (rows: Series<StringIC, IConvertible> seq) =
         Frame.ofRowsOrdinal rows
@@ -492,18 +578,19 @@ with
         |> Table.OfFrame
 
     static member OfRowsOrdinal (rows: Series<StringIC, ConvertibleUnion> seq) =
-        Frame.ofRowsOrdinal rows
-        |> Frame.mapRowKeys int
-        |> Table.OfFrame
+        let rows = rows |> Seq.map (Series.mapValues(fun m -> m.Value))
+        Table.OfRowsOrdinal rows
 
 
     static member OfRowsOrdinal (rows: seq<Observations>) =
-        rows
-        |> Seq.map (fun observations ->
-            observations.ObservationValues
-            |> series
-        )
-        |> Table.OfRowsOrdinal
+        let rows = 
+            rows
+            |> Seq.map (fun observations ->
+                observations.ObservationValues
+                |> series
+            )
+        
+        Table.OfRowsOrdinal rows
 
 
     static member OfExcelPackage(excelPackage: ExcelPackageWithXlsxFile, ?rangeGettingOptions, ?sheetGettingOptions) =
@@ -573,7 +660,7 @@ with
                 tableName,
                 columnAutofitOptions = savingOptions.ColumnAutofitOptions,
                 tableStyle = savingOptions.TableStyle,
-                automaticNumbericColumn = savingOptions.AutomaticNumbericColumn)
+                cellFormat = savingOptions.CellSavingFormat)
         )
 
         excelPackage.Save()

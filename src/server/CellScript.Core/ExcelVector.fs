@@ -52,7 +52,7 @@ with
    
     static member Convert(array2D: obj[,]) =
         array2D
-        |> Array2D.map (fixContent >> ConvertibleUnion.Convert)
+        |> Array2D.map (fixRawContent >> ConvertibleUnion.Convert)
         |> ExcelVector.Convert
 
 

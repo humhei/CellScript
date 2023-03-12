@@ -1,36 +1,30 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFrameworks>netstandard2.0; net462</TargetFrameworks>
-      <Version>99.99.99</Version>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(TargetFramework)|$(Platform)'=='Debug|netstandard2.0|AnyCPU'">
     <PlatformTarget>AnyCPU</PlatformTarget>
   </PropertyGroup>
   <ItemGroup>
     <EmbeddedResource Include="reference.conf" />
+    <Compile Include="Extensions.fs" />
     <Compile Include="Config.fs" />
     <Compile Include="CsvUtils.fs" />
-    <Compile Include="Extensions.fs" />
     <Compile Include="Types.fs" />
     <Compile Include="ExcelFrame.fs" />
     <Compile Include="Response.fs" />
     <Compile Include="ExcelArray.fs" />
     <Compile Include="Table.fs" />
-    <Compile Include="SearchableTable.fs" />
     <Compile Include="ExcelVector.fs" />
-    <Compile Include="Address.fs" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Akka.Logger.NLog" Version="1.3.5" />
-    <PackageReference Include="Chinese" Version="0.5.0" />
     <PackageReference Include="CsvHelper" Version="27.1.1" />
     <PackageReference Include="Deedle" Version="2.0.4" />
-    <PackageReference Include="EPPlus" Version="6.1.2" />
+    <PackageReference Include="EPPlus" Version="4.5.3.2" />
     <PackageReference Include="FParsec" Version="1.1.1" />
-    <PackageReference Include="Microsoft.Bcl.AsyncInterfaces" Version="6.0.0" />
-    <PackageReference Include="Shrimp.Akkling.Cluster.Intergraction" Version="0.2.81" />
-    <PackageReference Include="Shrimp.FSharp.Plus" Version="1.1.554"/>
-    <PackageReference Include="System.Memory" Version="4.5.5" />
+    <PackageReference Include="Shrimp.Akkling.Cluster.Intergraction" Version="0.2.70"/>
+    <PackageReference Include="Shrimp.FSharp.Plus" Version="1.1.474"/>
     <PackageReference Include="System.ValueTuple" Version="4.5.0" />
 
   </ItemGroup>

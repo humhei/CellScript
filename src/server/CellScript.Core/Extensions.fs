@@ -8,6 +8,40 @@ open System.Collections.Generic
 open System.Runtime.CompilerServices
 open Shrimp.FSharp.Plus
 
+[<AutoOpen>]
+module private _Utils =
+    let internal fixRawContent (content: obj) =
+        match content with
+        | :? ConvertibleUnion as v -> v.Value
+        | null -> null
+        | :? ExcelErrorValue -> null
+        | :? string as text -> 
+            match text.Trim() with 
+            | "" -> null 
+            | _ -> text :> IConvertible
+        | :? IConvertible as v -> 
+            match v with 
+            | :? DBNull -> null
+            | _ -> v
+        | _ -> failwithf "Cannot convert to %A to iconvertible" (content.GetType())
+
+    let private patterns = 
+        lazy 
+            System.Globalization.DateTimeFormatInfo.CurrentInfo.GetAllDateTimePatterns()
+            |> List.ofArray
+
+    let internal fixRawCell (content: ExcelRangeBase) =
+        
+        match content.Style.Numberformat.Format with 
+        | EqualTo "yyyy\-mm\-dd" ->
+            let v = 
+                (content.Value :?> double)
+                |> System.DateTime.FromOADate
+
+            v :> IConvertible
+
+        | _ -> fixRawContent content.Value
+    
 
 module Constrants = 
     let [<Literal>] SHEET1 = "Sheet1"
@@ -15,7 +49,6 @@ module Constrants =
 
     let [<Literal>] internal  DefaultTableName = "Table1"
     let [<Literal>] internal  CELL_SCRIPT_COLUMN = "CellScriptColumn"
-
 
 
 
@@ -253,4 +286,18 @@ module Extensions =
             x.LoadFromArrays(baseArray)
 
 
+        member range.ReadDatas() =
+            //let rowStart = range.Start.Row
+            //let rowEnd = range.End.Row
+            //let columnStart = range.Start.Column
+            //let columnEnd = range.End.Column
+            let content =
+                array2D
+                    [ for i = 0 to range.Rows-1 do 
+                        yield
+                            [ for j = 0 to range.Columns-1 do yield fixRawCell (range.Offset(i, j, 1, 1)) ]
+                    ] 
+                |> Array2D.map ConvertibleUnion.Convert
+
+            content
 

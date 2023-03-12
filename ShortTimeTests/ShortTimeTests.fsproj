@@ -7,9 +7,6 @@
 
   <ItemGroup>
     <Compile Include="File1.fs" />
-    <None Include="datas\**\**">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
     <Compile Include="Program.fs" />
   </ItemGroup>
 
@@ -18,6 +15,9 @@
   </ItemGroup>-->
 
   <ItemGroup>
+      <None Include="datas\**\**">
+          <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      </None>
     <ProjectReference Include="..\src\server\CellScript.Core\CellScript.Core.fsproj" />
   </ItemGroup>
 

@@ -7,11 +7,13 @@ open Shrimp.FSharp.Plus
 open System.IO
 open OfficeOpenXml
 open Newtonsoft.Json
+open CsvUtils
 open System.Runtime.CompilerServices
 open FParsec
 open FParsec.CharParsers
 open CellScript.Core.Constrants
 open System.Collections.Generic
+open CsvHelper
 
 
 
@@ -244,6 +246,7 @@ with
     member x.GetColumnBy(columnKey: ITableColumnKeyEx<_>) = x.AsFrame.GetColumnBy(columnKey)
 
 
+
     member table.MapFrame(mapping) =
         ExcelFrame.mapFrame mapping table.AsExcelFrame
         |> Table
@@ -251,6 +254,47 @@ with
     member x.RowCount = x.AsFrame.RowCount
 
     member x.Headers = x.AsFrame.ColumnKeys
+
+    member x.MoveColumnsToHead(columnKeys: StringIC list) =
+
+        let originHeaders = 
+            x.Headers
+            |> List.ofSeq
+
+        match columnKeys.Length < originHeaders.Length with 
+        | true -> 
+            match List.take columnKeys.Length originHeaders = columnKeys with 
+            | true -> x
+            | false ->
+                let originHeaders =
+                    originHeaders
+                    |> List.mapi(fun originIndex originHeader ->
+                        let index = 
+                            columnKeys
+                            |> List.tryFindIndex(fun m -> m = originHeader)
+
+                        let index = 
+                            match index with 
+                            | Some index -> -1, index
+                            | None -> 0, originIndex
+
+                        originHeader, index
+                    )
+                    |> dict
+
+                x.MapFrame(fun frame ->
+                    frame
+                    |> Frame.mapColKeys(fun colKey -> originHeaders.[colKey], colKey)
+                    |> Frame.sortColsByKey
+                    |> Frame.mapColKeys snd
+                )
+
+        | false -> 
+            let notExistsHeader =
+                columnKeys
+                |> List.find(fun m -> not (List.contains m originHeaders))
+
+            failwithf "%A not exists in headers" notExistsHeader
 
 
     member x.AddColumns(columns, ?position) =
@@ -303,6 +347,25 @@ with
                 newFrame
             )
 
+    member tb.AddColumns_SingtonValue(keys, value, ?position) =
+        let rowCount = tb.RowCount
+
+        let columns =
+            let rowKeys =
+                tb.AsFrame.RowKeys
+
+            let columnValues =
+                let values = List.replicate rowCount value
+                Series.ofValues values
+                |> Series.indexWith rowKeys
+
+            keys
+            |> List.map(fun column ->
+                column => columnValues
+            )
+
+        tb.AddColumns(columns, ?position = position)
+
     member x.AddColumn(key, values, ?position) =
         x.AddColumns([key, values], ?position = position)
 
@@ -320,6 +383,7 @@ with
         x.AddColumn(key, values, ?position = position)
 
 
+    /// with header
     member frame.ToArray2D() = 
         let header = 
             frame.Headers 
@@ -355,16 +419,8 @@ with
          ?tableStyle,
          ?cellFormat) =
 
-        let worksheet = 
-            let worksheets = excelPackage.Workbook.Worksheets
-            worksheets
-            |> Seq.tryFind(fun sheet -> StringIC sheet.Name = StringIC sheetName)
-            |> function
-                | Some sheet -> VisibleExcelWorksheet.Create sheet 
-                | None ->
-                    excelPackage.Workbook.Worksheets.Add(sheetName)
-                    |> VisibleExcelWorksheet.Create
-
+        let worksheet = excelPackage.GetOrAddWorksheet(sheetName)
+            
         let cellFormat = defaultArg cellFormat CellSavingFormat.KeepOrigin
 
 
@@ -385,9 +441,28 @@ with
                         let numbers =
                             colValues
                             |> List.choose(fun m ->
-                                match System.Double.TryParse (m.ToString()) with 
-                                | true, v -> Some (v)
-                                | false, _ -> None
+                                let m = m.ToString()
+                                match m with 
+                                | String.StartsWith "0" -> None
+                                | String.Contains "," -> None
+                                | _ ->
+                                    match System.Double.TryParse (m) with 
+                                    | true, v -> 
+                                        match m.Contains "." with 
+                                        | true ->
+                                            let right = m.RightOfF "."    
+                                            match System.Int32.Parse right with 
+                                            | 0 -> None
+                                            | _ -> 
+                                                match v.ToString().Length < 10 with 
+                                                | true -> Some (v)
+                                                | false -> None
+
+                                        | false ->
+                                            match v.ToString().Length < 10 with 
+                                            | true -> Some (v)
+                                            | false -> None
+                                    | false, _ -> None
                             )
 
                         match numbers.Length = colValues.Length with 
@@ -454,7 +529,11 @@ with
         )
 
 
-    member x.SaveToXlsx(path: string, ?tableXlsxSavingOptions: TableXlsxSavingOptions) =
+    member x.SaveToXlsx(path: string, ?tableXlsxSavingOptions: TableXlsxSavingOptions) =    
+        match x.RowCount with 
+        | 0 -> failwith "Table is empty"
+        | _ -> ()
+
         do (path |> XlsxPath |> ignore)
         let savingOptions = defaultArg tableXlsxSavingOptions TableXlsxSavingOptions.DefaultValue
 
@@ -615,6 +694,12 @@ with
         
         Table.OfArray2D(excelRangeInfo.Content |> Array2D.map(fun m -> m.Value))
 
+    static member OfCsvFile(csvFile: CsvFile) =
+        Frame.ReadCsv(csvFile.Path)
+        |> Frame.mapColKeys StringIC
+        |> ExcelFrame
+        |> Table
+
     interface IToArray2D with 
         member x.ToArray2D() =
             x.ToArray2D()
@@ -736,6 +821,43 @@ module Table =
             |> AtLeastOneList.map (fun table -> table.AsFrame)
             |> Frame.Concat_RefreshRowKeys
         )
+
+    let concat_RefreshRowKeys_ForceSameHeaders (tables: AtLeastOneList<Table>) =
+        let allHeaders_List =
+            tables.AsList
+            |> List.collect(fun m -> List.ofSeq m.Headers)
+            |> List.distinct
+
+        let allHeaders_Indexed = 
+            allHeaders_List 
+            |> List.indexed
+
+
+        let allHeaders = Set.ofList allHeaders_List
+
+
+        let newTables =
+            tables
+            |> AtLeastOneList.map(fun tb ->
+                let headers = tb.Headers |> Set.ofSeq
+                let diff = Set.difference allHeaders headers 
+                match diff.IsEmpty with 
+                | true -> tb
+                | false -> 
+                    let diff = 
+                        diff
+                        |> Set.toList
+                        |> List.map(fun m -> 
+                            allHeaders_Indexed
+                            |> List.find(fun (_, n) -> m = n)
+                        )
+                        |> List.sortBy fst
+                        |> List.map snd
+
+                    tb.AddColumns_SingtonValue(diff, "")
+            )
+
+        concat_RefreshRowKeys newTables
 
 
     [<System.Obsolete("This method is obsolted, using concat_RefreshRowKeys instead")>]

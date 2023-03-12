@@ -5,6 +5,7 @@ open Extensions
 open System
 open OfficeOpenXml
 open System.IO
+open System.Collections.Generic
 open Shrimp.FSharp.Plus
 open Constrants
 
@@ -14,6 +15,11 @@ module Types =
     let private fixTableName (tableName: string) =
         tableName
             .Replace(' ','_')
+
+
+    let private userRange_maxColumnWidth =
+        lazy
+            config.Value.GetInt("CellScript.Core.UserRangeMaxColumnIndex")
 
     type ValidTableName (v: string) =
         inherit POCOBaseV<StringIC>(StringIC(fixTableName v))
@@ -31,20 +37,7 @@ module Types =
         abstract member Convertible: IConvertible
     
 
-    let internal fixRawContent (content: obj) =
-        match content with
-        | :? ConvertibleUnion as v -> v.Value
-        | null -> null
-        | :? ExcelErrorValue -> null
-        | :? string as text -> 
-            match text.Trim() with 
-            | "" -> null 
-            | _ -> text :> IConvertible
-        | :? IConvertible as v -> 
-            match v with 
-            | :? DBNull -> null
-            | _ -> v
-        | _ -> failwithf "Cannot convert to %A to iconvertible" (content.GetType())
+
 
     let internal readContentAsConvertible (content: obj) =
         match content with 
@@ -82,6 +75,7 @@ module Types =
     
     type RangeGettingOptions =
         | RangeIndexer of string
+        /// MaxColumnIndex: cfg(CellScript.Core.UserRangeMaxColumnIndex)
         | UserRange
 
     [<RequireQualifiedAccess>]
@@ -100,9 +94,43 @@ module Types =
         | KeepOrigin 
         | ODBC
 
+    [<RequireQualifiedAccess>]
+    module FormulaText =
+        let Create(text: string) =
+            sprintf "Formula(%s)" text
+
+    let private (|FormulaText|_|) (text: string) =
+        match text with 
+        | String.TrimStartIC "Formula(" v -> Some (v.TrimEnding(")"))
+        | _ -> None
+
 
     type SheetContentsEmptyException(error: string) =
         inherit Exception(error)
+
+    type OfficeOpenXml.Table.ExcelTable with 
+        member x.DeleteRowsBack(rowsCount) =
+            let rows = x.Address.Rows
+            x.DeleteRow(rows-rowsCount-1, rowsCount)
+
+        member x.DeleteColumnsBack(columnsCount) =
+            let columns = x.Address.Columns
+            x.Columns.Delete(columns-columnsCount-1, columnsCount)
+
+    type ExcelWorksheet with 
+        member sheet.FixedDimension =
+            let ending = 
+                let addr = sheet.Dimension.End
+                ExcelCellAddress(addr.Row, min userRange_maxColumnWidth.Value addr.Column)
+
+            let start = sheet.Dimension.Start
+
+            ExcelAddress(
+                start.Row,
+                start.Column,
+                ending.Row,
+                ending.Column
+            )
 
 
     type VisibleExcelWorksheet = private VisibleExcelWorksheet of ExcelWorksheet
@@ -121,26 +149,192 @@ module Types =
                 sheet.Cells.[indexer]
 
             | UserRange ->
-                let indexer = sheet.Dimension.Start.Address + ":" + sheet.Dimension.End.Address
+                let dimension = sheet.FixedDimension
+
+                let indexer = dimension.Start.Address + ":" + dimension.Address
                 sheet.Cells.[indexer]
 
-
-        member x.LoadFromArraysAsTable(arrays: IConvertible [, ], ?columnAutofitOptions, ?tableName: string, ?tableStyle: Table.TableStyles, ?addr) =
-
-
+        member x.LoadFromArrays(array2D: IConvertible [, ], ?addr, ?includingFormula) =
             
             let worksheet = x.Value
             let addr = defaultArg addr "A1"
 
-            let range = worksheet.Cells.[addr].LoadFromArray2D(arrays) 
+            let range = worksheet.Cells.[addr].LoadFromArray2D(array2D) 
                 
-            let tab = 
-                let tableName =
-                    match tableName with 
-                    | Some tableName -> tableName
-                    | None -> DefaultTableName
+            match defaultArg includingFormula false with 
+            | false -> ()
+            | true ->
+                let range = worksheet.Cells.[range.Start.Address]
+                array2D
+                |> Array2D.toLists
+                |> List.iteri(fun rowNum row ->
+                    row
+                    |> List.iteri(fun colNum v ->
+                        match v with 
+                        | :? string as v -> 
+                            match v with 
+                            | FormulaText v -> 
+                                let range = range.Offset(rowNum, colNum)
+                                //range.Value <- v
+                                range.Formula <- v
+                            | _ -> ()
+                        | _ -> ()
+                    )
+                )
 
-                worksheet.Tables.Add(ExcelAddress range.Address, tableName)
+      
+
+        member x.LoadFromArraysAsTable(datas: IConvertible [, ], ?columnAutofitOptions, ?tableName: string, ?tableStyle: Table.TableStyles, ?addr, ?includingFormula, ?allowRerangeTable) =
+            //let allowRerangeTable = None
+            let __checkDataValid =
+                match Array2D.length1 datas, Array2D.length2 datas with 
+                | BiggerThan 1, BiggerThan 0 -> ()
+                | l1, l2 -> failwithf "Invalid table data length %A" (l1, l2)
+
+            let fixHeaders (datas: IConvertible [,]) =
+                let lists = Array2D.toLists datas
+                let headers = lists.[0]
+                let contents = lists.[1..]
+
+                let headers = 
+                    let headers =
+                        headers
+                        |> List.map(fun m ->
+                            match m with 
+                            | null -> ""
+                            | _ -> m.ToString()
+                        )
+
+
+                    let automaticColumnHeaders =
+                        headers
+                        |> List.choose(fun m -> 
+                            match m with
+                            | String.TrimStartIC "Column" i ->
+                                match System.Int32.TryParse i with 
+                                | true, i -> Some i
+                                | _ -> None
+
+                            | _ -> None
+                        )
+                        |> HashSet
+
+                    let generateId() =
+                        [1..1000]
+                        |> List.find(fun m ->
+                            match automaticColumnHeaders.Contains m with
+                            | true -> false
+                            | false -> 
+                                automaticColumnHeaders.Add m |> ignore
+                                true
+                        )
+
+
+                    headers
+                    |> List.map(fun m ->
+                        match m.Trim() with 
+                        | "" -> ("Column" + generateId().ToString()) :> IConvertible
+                        | _ -> m :> IConvertible
+                    )
+
+                headers :: contents
+                |> array2D
+
+            let datas = fixHeaders datas
+
+            let worksheet = x.Value
+            let allowRerangeTable = defaultArg allowRerangeTable false
+
+            let tableName = defaultArg tableName DefaultTableName
+
+            let findedTable =
+                worksheet.Tables
+                |> Seq.tryFind(fun m -> StringIC m.Name = StringIC tableName)
+
+            let addr = 
+                match findedTable, allowRerangeTable with  
+                | Some table, true -> table.Address.Start.Address
+                | _ -> defaultArg addr "A1"
+
+            let range = worksheet.Cells.[addr]
+
+            let tab = 
+                match findedTable, allowRerangeTable with 
+                | Some findedTable, true -> 
+                    let array2D_rows    = Array2D.length1 datas
+                    let array2D_columns = Array2D.length2 datas
+
+                    let addr = findedTable.Address
+                    
+                    let rows    = addr.Rows
+                    let columns = addr.Columns
+
+                    let row_substract = rows - array2D_rows
+                    let column_substract = columns - array2D_columns
+
+                    match row_substract with 
+                    | 0 -> ()
+                    | BiggerThan 0 ->
+                        findedTable.DeleteRowsBack(abs row_substract)
+                        |> ignore
+
+                    | SmallerThan 0 -> 
+                        findedTable.AddRow(abs row_substract)
+                        |> ignore
+                    
+                    | _ -> failwith "Invalid token"
+
+                    match column_substract with 
+                    | 0 -> ()
+                    | BiggerThan 0 ->
+                        findedTable.DeleteColumnsBack(abs column_substract)
+                        |> ignore
+
+                    | SmallerThan 0 -> 
+                        findedTable.Columns.Add(abs column_substract)
+                        |> ignore
+                    
+                    | _ -> failwith "Invalid token"
+
+                    let __checkTableValid =
+                        let addr = findedTable.Address
+                        match addr.Rows = array2D_rows, addr.Columns = array2D_columns with 
+                        | true, true -> ()
+                        | _ -> failwithf "Invalid token, new table addr %A is not consistent to %A" addr.Address (array2D_columns, array2D_rows)
+
+                    worksheet.Cells.[addr.Address].LoadFromArray2D(datas)
+                    |> ignore
+
+                    findedTable
+
+                | Some tb, false ->
+                    failwithf "Duplicate table name %s" tb.Name
+
+                | None, false
+                | None, true ->
+                    let range = worksheet.Cells.[addr].LoadFromArray2D(datas)
+                    worksheet.Tables.Add(ExcelAddress range.Address, tableName)
+
+                
+            match defaultArg includingFormula false with 
+            | false -> ()
+            | true ->
+                let range = worksheet.Cells.[range.Start.Address]
+                datas
+                |> Array2D.toLists
+                |> List.iteri(fun rowNum row ->
+                    row
+                    |> List.iteri(fun colNum v ->
+                        match v with 
+                        | :? string as v -> 
+                            match v with 
+                            | FormulaText v -> 
+                                range.Offset(rowNum, colNum).Formula <- v
+                            | _ -> ()
+                        | _ -> ()
+                    )
+                )
+
 
             tab.TableStyle <- 
                 defaultArg tableStyle <| DefaultTableStyle()
@@ -186,13 +380,8 @@ module Types =
             let columnStart = range.Start.Column
             let columnEnd = range.End.Column
     
-            let content =
-                array2D
-                    [ for i = rowStart to rowEnd do 
-                        yield
-                            [ for j = columnStart to columnEnd do yield fixRawContent range.[i,j].Value ]
-                    ] 
-                |> Array2D.map ConvertibleUnion.Convert
+            let content = range.ReadDatas()
+                
     
             {|
                 RowStart = rowStart
@@ -211,7 +400,8 @@ module Types =
                 Result.Ok (ValidExcelWorksheet visibleExcelWorksheet)
 
         static member Create(visibleExcelWorksheet: VisibleExcelWorksheet) =
-            ValidExcelWorksheet(visibleExcelWorksheet)
+            ValidExcelWorksheet.TryCreate(visibleExcelWorksheet)
+            |> Result.getOrFail
 
         static member Create (excelworksheet: ExcelWorksheet) =
             ValidExcelWorksheet.Create(VisibleExcelWorksheet.Create(excelworksheet))
@@ -229,6 +419,8 @@ module Types =
             //SheetGettingOptions.SheetIndex 0
             SheetGettingOptions.SheetNameOrSheetIndex (StringIC SHEET1, 0)
 
+
+
     type ExcelPackage with
 
         member excelPackage.GetVisibleWorksheets() =
@@ -236,17 +428,18 @@ module Types =
             |> Seq.filter(fun m -> m.Hidden = eWorkSheetHidden.Visible)
             |> Seq.map VisibleExcelWorksheet
 
+        member excelPackage.GetVisibleSheetByIndex(index) =
+            let worksheet =
+                excelPackage.Workbook.Worksheets
+                |> Seq.filter(fun m -> m.Hidden = eWorkSheetHidden.Visible)
+                |> Seq.tryItem index
+
+            match worksheet with 
+            | Some worksheet -> worksheet
+            | None -> failwithf "Cannot get visible worksheet %A from %s, please check xlsx file" index excelPackage.File.FullName
+
+
         member excelPackage.GetVisibleWorksheet (options) =
-            let getVisibleSheetByIndex(index) =
-                let worksheet =
-                    excelPackage.Workbook.Worksheets
-                    |> Seq.filter(fun m -> m.Hidden = eWorkSheetHidden.Visible)
-                    |> Seq.tryItem index
-
-                match worksheet with 
-                | Some worksheet -> worksheet
-                | None -> failwithf "Cannot get visible worksheet %A from %s, please check xlsx file" options excelPackage.File.FullName
-
             let excelworksheet = 
                 match options with 
                 | SheetGettingOptions.SheetName sheetName -> 
@@ -255,11 +448,11 @@ module Types =
                     | null -> failwithf "No sheet named %s was found in %A" sheetName.Value (excelPackage.File)
                     | _ -> sheet
 
-                | SheetGettingOptions.SheetIndex index -> getVisibleSheetByIndex index
+                | SheetGettingOptions.SheetIndex index -> excelPackage.GetVisibleSheetByIndex index
                 | SheetGettingOptions.SheetNameOrSheetIndex (sheetName, index) ->
                     match Seq.tryFind (fun (worksheet: ExcelWorksheet) -> StringIC worksheet.Name = sheetName && worksheet.Hidden = eWorkSheetHidden.Visible) excelPackage.Workbook.Worksheets with 
                     | Some worksheet -> worksheet
-                    | None -> getVisibleSheetByIndex index
+                    | None -> excelPackage.GetVisibleSheetByIndex index
 
 
             VisibleExcelWorksheet.Create excelworksheet
@@ -275,6 +468,19 @@ module Types =
         member excelPackage.GetValidWorksheets() =
             excelPackage.GetValidWorksheets_Seq()
             |> List.ofSeq
+
+        member excelPackage.GetOrAddWorksheet(sheetName: string) =
+            let worksheet = 
+                let worksheets = excelPackage.Workbook.Worksheets
+                worksheets
+                |> Seq.tryFind(fun sheet -> StringIC sheet.Name = StringIC sheetName)
+                |> function
+                    | Some sheet -> VisibleExcelWorksheet.Create sheet 
+                    | None ->
+                        excelPackage.Workbook.Worksheets.Add(sheetName)
+                        |> VisibleExcelWorksheet.Create
+
+            worksheet
 
     type ExcelRangeContactInfo =
         { ColumnFirst: int

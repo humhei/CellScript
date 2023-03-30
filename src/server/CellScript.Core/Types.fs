@@ -77,6 +77,7 @@ module Types =
         | RangeIndexer of string
         /// MaxColumnIndex: cfg(CellScript.Core.UserRangeMaxColumnIndex)
         | UserRange
+        | UserRange_SkipRows of int
 
     [<RequireQualifiedAccess>]
     type ColumnAutofitOptions =
@@ -152,6 +153,15 @@ module Types =
                 let dimension = sheet.FixedDimension
 
                 let indexer = dimension.Start.Address + ":" + dimension.Address
+                sheet.Cells.[indexer]
+
+            | UserRange_SkipRows skipRows ->
+                let dimension = sheet.FixedDimension
+                let start = 
+                    let start = dimension.Start
+                    ExcelCellAddress(start.Row + skipRows, start.Column)
+
+                let indexer = start.Address + ":" + dimension.End.Address
                 sheet.Cells.[indexer]
 
         member x.LoadFromArrays(array2D: IConvertible [, ], ?addr, ?includingFormula) =

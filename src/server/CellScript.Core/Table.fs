@@ -124,6 +124,23 @@ module __ITableColumnKeyExtensions =
                 |> Some
             | OptionalValue.Missing _ -> None
 
+        [<Extension>]
+        static member ObservationsAllEx(row: ObjectSeries<string>) =
+            row.ObservationsAll
+            |> List.ofSeq
+            |> List.map(fun pair ->
+                let value =
+                    match OptionalValue.asOption pair.Value with 
+                    | Some convertible ->
+                        match convertible with
+                        | :? IConvertible as convertible -> convertible |> ConvertibleUnion.Convert
+                        | :? ICellValue as v -> v.Convertible |> ConvertibleUnion.Convert
+                        | _ -> failwithf "type of cell value %A should either be ITableCellValue or IConvertible" (convertible.GetType())
+                    | None -> ConvertibleUnion.Missing
+
+                observation(StringIC pair.Key, value)
+            )
+            |> observations
 
         [<Extension>]
         static member ObservationsAllEx(row: ObjectSeries<StringIC>) =
@@ -261,7 +278,7 @@ with
             x.Headers
             |> List.ofSeq
 
-        match columnKeys.Length < originHeaders.Length with 
+        match columnKeys.Length <= originHeaders.Length with 
         | true -> 
             match List.take columnKeys.Length originHeaders = columnKeys with 
             | true -> x
@@ -402,7 +419,7 @@ with
         result
 
     member private x.FormatText = 
-        x.AsFrame.Format(50)
+        x.AsFrame.FillMissing("").Format(50)
     
     member x.ToExcelArray() =
         let array2D = x.ToArray2D()
@@ -451,12 +468,15 @@ with
                                         match m.Contains "." with 
                                         | true ->
                                             let right = m.RightOfF "."    
-                                            match System.Int32.Parse right with 
-                                            | 0 -> None
-                                            | _ -> 
-                                                match v.ToString().Length < 10 with 
-                                                | true -> Some (v)
-                                                | false -> None
+                                            match right.Trim() with 
+                                            | "" -> None
+                                            | _ ->
+                                                match System.Int32.Parse right with 
+                                                | 0 -> None
+                                                | _ -> 
+                                                    match v.ToString().Length < 10 with 
+                                                    | true -> Some (v)
+                                                    | false -> None
 
                                         | false ->
                                             match v.ToString().Length < 10 with 
@@ -538,7 +558,9 @@ with
         let savingOptions = defaultArg tableXlsxSavingOptions TableXlsxSavingOptions.DefaultValue
 
         if savingOptions.IsOverride
-        then File.Delete path
+        then 
+            if File.Exists path
+            then File.Delete path
 
         let excelPackage = new ExcelPackage(FileInfo(path))
         x.AddToExcelPackage(

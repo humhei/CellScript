@@ -419,7 +419,11 @@ module _Address_Extensions =
 
     type AddressedArrays with 
         member x.SaveToXlsx(xlsxPath: XlsxPath, ?sheetName) =
-            File.Delete(xlsxPath.Path)
+            if File.Exists(xlsxPath.Path)
+            then File.Delete(xlsxPath.Path)
+
+            let dir = Path.GetDirectoryName (xlsxPath.Path)
+            let _ = Directory.CreateDirectory(dir) |> ignore
             let excelPackage = new ExcelPackage(xlsxPath.Path)
             let sheet = excelPackage.Workbook.Worksheets.Add(defaultArg sheetName "Sheet1")
             sheet.LoadFromAddressedArrays(x.AsList)

@@ -45,8 +45,32 @@ with
 
 [<EntryPoint>]
 let main argv =
-    let m = Table.OfXlsxFile (XlsxFile @"D:\Users\Jia\Documents\MyData\Docs\2017\健耐\Shasa\数据库.xlsx")
-    let m = SearchableTable.OfCsvFile (CsvFile  @"D:\Users\Jia\Documents\Shrimp.Workflow.TypeProvider\颜色翻译.csv")
-    let p = m.["全黑", "Color"]
+    let template = 
+        @"\\2021-pc\JobData\2023年-管家婆\模板\错误修复模板.xlsx"
+        |> XlsxFile
+
+    let values = 
+        @"\\2021-pc\2023-已完成出CTP文件2\自动打印\资料\中达客户资料.xlsx"
+        |> XlsxFile
+        |> Table.OfXlsxFile 
+
+    let addressedArray = 
+        { AddressedArray.ofTable "A1" (values) with 
+            SpecificName = Some "客户资料"
+        } 
+        |> List.singleton
+        |> AddressedArrays.OfList
+
+    let named =
+        { NamedAddressedArrays.SheetName = "客户资料修复"
+          SpecificTargetSheetName = None 
+          AddressedArrays = addressedArray }
+
+    let targetXlsxPath =
+        @"C:\Users\Administrator\Desktop\中达产品结果.xlsx"
+        |> XlsxPath
+
+    named.SaveToXlsx_FromTemplate(template, targetXlsxPath)
+
 
     0

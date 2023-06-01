@@ -1,4 +1,4 @@
-namespace CellScript.Core
+﻿namespace CellScript.Core
 #nowarn "0104"
 open Deedle
 open Extensions
@@ -78,6 +78,7 @@ module Types =
         /// MaxColumnIndex: cfg(CellScript.Core.UserRangeMaxColumnIndex)
         | UserRange
         | UserRange_SkipRows of int
+        | TableName of string
 
     [<RequireQualifiedAccess>]
     type ColumnAutofitOptions =
@@ -133,6 +134,8 @@ module Types =
                 ending.Column
             )
 
+    type TableNameNotFoundException(tableName, allTableNames: string list) =
+        inherit Exception(sprintf "Cannot found any table named %s, avaliable tables are %A" tableName allTableNames)
 
     type VisibleExcelWorksheet = private VisibleExcelWorksheet of ExcelWorksheet
     with 
@@ -147,7 +150,7 @@ module Types =
 
             match options with
             | RangeIndexer indexer ->
-                sheet.Cells.[indexer]
+                sheet.Cells.[indexer] :> ExcelRangeBase
 
             | UserRange ->
                 let dimension = sheet.FixedDimension
@@ -163,6 +166,23 @@ module Types =
 
                 let indexer = start.Address + ":" + dimension.End.Address
                 sheet.Cells.[indexer]
+
+            | TableName tbName ->
+                let findedTable =
+                    x.Value.Tables
+                    |> Seq.tryFind(fun m -> StringIC m.Name = StringIC tbName)
+
+                match findedTable with 
+                | Some table -> table.Range
+                | None ->   
+                    let allTableNames =
+                        x.Value.Tables
+                        |> List.ofSeq
+                        |> List.map(fun m -> m.Name)
+
+                    TableNameNotFoundException(tbName, allTableNames)
+                    |> raise
+
 
         member x.LoadFromArrays(array2D: IConvertible [, ], ?addr, ?includingFormula) =
             
@@ -246,11 +266,19 @@ module Types =
                         | "" -> ("Column" + generateId().ToString()) :> IConvertible
                         | _ -> m :> IConvertible
                     )
+                
+                let datas =
+                    headers :: contents
+                    |> array2D
 
-                headers :: contents
-                |> array2D
+                headers, datas
 
-            let datas = fixHeaders datas
+            let headers, datas = fixHeaders datas
+
+            let headers = headers |> List.map (fun header ->
+                (ConvertibleUnion.Convert header).Text
+                |> StringIC
+            )
 
             let worksheet = x.Value
             let allowRerangeTable = defaultArg allowRerangeTable false
@@ -260,6 +288,13 @@ module Types =
             let findedTable =
                 worksheet.Tables
                 |> Seq.tryFind(fun m -> StringIC m.Name = StringIC tableName)
+
+            //let avaliableTableNames = 
+            //    worksheet.Tables
+            //    |> List.ofSeq
+            //    |> List.map(fun m -> m.Name)
+
+
 
             let addr = 
                 match findedTable, allowRerangeTable with  
@@ -280,7 +315,7 @@ module Types =
                     let columns = addr.Columns
 
                     let row_substract = rows - array2D_rows
-                    let column_substract = columns - array2D_columns
+                    //let column_substract = columns - array2D_columns
 
                     match row_substract with 
                     | 0 -> ()
@@ -289,31 +324,120 @@ module Types =
                         |> ignore
 
                     | SmallerThan 0 -> 
-                        findedTable.AddRow(abs row_substract)
+                        let row = findedTable.AddRow(abs row_substract)
+
+                        let keepHeights = 
+                            let beforeRow = row.Offset(-1, 0, 1, 1)
+                            let beforeRowHeight = beforeRow.EntireRow.Height
+                            let rowStart = row.Start
+                            let rowEnd = row.End
+
+                            [rowStart.Row .. rowEnd.Row]
+                            |> List.iter(fun row ->
+                                worksheet.Row(row).Height <- beforeRowHeight
+                            )
+
+                        row
                         |> ignore
                     
                     | _ -> failwith "Invalid token"
 
-                    match column_substract with 
-                    | 0 -> ()
-                    | BiggerThan 0 ->
-                        findedTable.DeleteColumnsBack(abs column_substract)
-                        |> ignore
+                    //match column_substract with 
+                    //| 0 -> ()
+                    //| BiggerThan 0 ->
+                    //    findedTable.DeleteColumnsBack(abs column_substract)
+                    //    |> ignore
 
-                    | SmallerThan 0 -> 
-                        findedTable.Columns.Add(abs column_substract)
-                        |> ignore
+                    //| SmallerThan 0 -> 
+                    //    findedTable.Columns.Add(abs column_substract)
+                    //    |> ignore
                     
-                    | _ -> failwith "Invalid token"
+                    //| _ -> failwith "Invalid token"
 
                     let __checkTableValid =
                         let addr = findedTable.Address
-                        match addr.Rows = array2D_rows, addr.Columns = array2D_columns with 
-                        | true, true -> ()
+                        match addr.Rows = array2D_rows(*, addr.Columns = array2D_columns*) with 
+                        | true(*, true*) -> ()
                         | _ -> failwithf "Invalid token, new table addr %A is not consistent to %A" addr.Address (array2D_columns, array2D_rows)
 
-                    worksheet.Cells.[addr.Address].LoadFromArray2D(datas)
-                    |> ignore
+                    //worksheet.Cells.["K10"].Value <- "Yes"
+                    //let addr = "C21:D24"
+                        
+                    //let datas = datas.[1.., *]
+
+                    let addr = 
+                        findedTable.Address.Address
+                        |> ComparableExcelAddress.OfAddress
+                    //let originWidth  = worksheet.Cells.[addr.Address].EntireColumn.Width
+                    //let originWidth  = worksheet.Cells.["A1"].EntireColumn.Width
+                 
+                    let columns = 
+                        let headers = 
+                            let range = 
+                                let columnCount = findedTable.Columns.Count
+                                findedTable.Range.Offset(0, 0, 1, columnCount)
+                            
+                            range
+                            |> List.ofSeq
+                            |> List.map(fun m -> m.Text)
+
+                        let columns = 
+                            findedTable.Columns
+                            |> List.ofSeq
+
+                        (headers, columns)
+                        ||> List.map2(fun header column ->
+                            {|
+                                Name = header
+                                Column = column
+                            |}
+                        )
+
+                    let headers = 
+                        match columns with 
+                        | [column] -> [StringIC column.Name]
+                        | _ -> headers
+
+                    let columnNames =
+                        columns
+                        |> List.map(fun m -> StringIC m.Name)
+
+                    columns
+                    |> List.iteri(fun columnID column ->
+                        let columnName = column.Name
+                        let finedHeader =
+                            headers
+                            |> List.tryFindIndex(fun header -> header = StringIC columnName)
+
+                        match finedHeader with 
+                        | None -> ()
+                        | Some finedHeader ->
+                            let datas = datas.[1.., finedHeader]
+                            let addr2 = addr.Offset(1, columnID, datas.Length-1, 0)
+                            worksheet.Cells.[addr2.Address].LoadFromCollection(datas)
+                            |> ignore
+                    )
+
+                    let addOtherColumn =
+                        headers
+                        |> List.indexed
+                        |> List.filter(fun (i, header) ->
+                            List.contains header columnNames
+                            |> not
+                        )
+                        |> List.iter(fun (i, header) ->
+                            let newColumn = findedTable.Columns.Add(1)
+                            let datas = datas.[0.., i]
+                            newColumn.LoadFromCollection(datas)
+                            |> ignore
+                        )
+
+           
+
+                    //worksheet.Cells.[addr.Address].LoadFromArray2D(datas)
+                    //|> ignore
+
+                    //worksheet.Column(1).Width <- 800
 
                     findedTable
 
@@ -323,8 +447,19 @@ module Types =
                 | None, false
                 | None, true ->
                     let range = worksheet.Cells.[addr].LoadFromArray2D(datas)
-                    worksheet.Tables.Add(ExcelAddress range.Address, tableName)
+                    try
+                        worksheet.Tables.Add(ExcelAddress range.Address, tableName)
 
+                    with ex ->
+                        let message = 
+                            let avaliableTableNames = 
+                                worksheet.Tables
+                                |> List.ofSeq
+                                |> List.map(fun m -> m.Name)
+
+                            sprintf "%s\nWhen adding table ‘%s’\nAvaliable table names are %A" ex.Message tableName avaliableTableNames
+                        let ex = new System.Exception(message)
+                        raise ex
                 
             match defaultArg includingFormula false with 
             | false -> ()

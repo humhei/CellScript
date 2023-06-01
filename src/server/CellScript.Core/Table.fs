@@ -23,9 +23,10 @@ type TableXlsxSavingOptions =
       ColumnAutofitOptions: ColumnAutofitOptions
       TableName: string
       TableStyle: Table.TableStyles
+      IncludingFormula: bool
       CellSavingFormat: CellSavingFormat }
 with 
-    static member Create(?isOverride: bool, ?sheetName: string, ?columnAutofitOptions, ?tableName: string, ?tableStyle, ?cellFormat) =
+    static member Create(?isOverride: bool, ?sheetName: string, ?columnAutofitOptions, ?tableName: string, ?tableStyle, ?cellFormat, ?includingFormula) =
         {
             IsOverride = defaultArg isOverride true
             SheetName = defaultArg sheetName SHEET1
@@ -33,6 +34,7 @@ with
             TableName = defaultArg tableName DefaultTableName
             TableStyle = defaultArg tableStyle <| DefaultTableStyle()
             CellSavingFormat = defaultArg cellFormat CellSavingFormat.KeepOrigin
+            IncludingFormula = defaultArg includingFormula false
         }
 
 
@@ -80,9 +82,19 @@ module __ITableColumnKeyExtensions =
         static member GetBy(row: ObjectSeries<StringIC>, columnKey: ITableColumnKey<'Value>) =
             row.GetAs<'Value>(columnKey.StringIC())
 
+
         [<Extension>]
         static member TryGetBy(row: ObjectSeries<StringIC>, columnKey: ITableColumnKey<'Value>, ?checkKeyValid) =
             row.TryGetAsEx<'Value>(columnKey.StringIC(), ?checkKeyValid = checkKeyValid)
+
+
+        [<Extension>]
+        static member GetAsDateTime(row: ObjectSeries<StringIC>, key: StringIC) =
+            match row.GetAs<obj>(key) with 
+            | :? double as convertible -> System.DateTime.FromOADate convertible 
+            | :? DateTime as v -> v
+            | :? string as v -> System.DateTime.Parse v
+            | v -> failwithf "Cannot parse %A to datetime" (v.GetType(), v.ToString())
 
 
         [<Extension>]
@@ -270,6 +282,7 @@ with
 
     member x.RowCount = x.AsFrame.RowCount
 
+    member x.IsEmpty = x.RowCount = 0
     member x.Headers = x.AsFrame.ColumnKeys
 
     member x.MoveColumnsToHead(columnKeys: StringIC list) =
@@ -431,6 +444,7 @@ with
         (excelPackage: ExcelPackage,
          sheetName,
          tableName,
+         ?includingFormula,
          ?addr, 
          ?columnAutofitOptions,
          ?tableStyle,
@@ -471,14 +485,17 @@ with
                                             match right.Trim() with 
                                             | "" -> None
                                             | _ ->
-                                                match System.Int32.Parse right with 
-                                                | 0 -> None
-                                                | _ -> 
-                                                    match v.ToString().Length < 10 with 
+                                                match System.Int32.TryParse right with 
+                                                | true, 0 -> None
+                                                | false, _ -> None
+                                                | _ ->  
+                                                    //Some v
+                                                    match right.Length < 10 with 
                                                     | true -> Some (v)
                                                     | false -> None
 
                                         | false ->
+                                            //Some v
                                             match v.ToString().Length < 10 with 
                                             | true -> Some (v)
                                             | false -> None
@@ -534,7 +551,8 @@ with
             columnAutofitOptions = defaultArg columnAutofitOptions ColumnAutofitOptions.DefaultValue,
             tableName = tableName, 
             tableStyle = defaultArg tableStyle (DefaultTableStyle()),
-            ?addr = addr
+            ?addr = addr,
+            ?includingFormula = includingFormula
         )
 
         array2D
@@ -567,6 +585,7 @@ with
             excelPackage,
             savingOptions.SheetName,
             savingOptions.TableName,
+            includingFormula = savingOptions.IncludingFormula,
             columnAutofitOptions = savingOptions.ColumnAutofitOptions,
             tableStyle = savingOptions.TableStyle,
             cellFormat = savingOptions.CellSavingFormat)
@@ -743,6 +762,64 @@ with
 type Tables = Tables of Table al1List
 with    
     
+    static member OfXlsxFile(xlsxFile: XlsxFile, ?rangeGettingOptions, ?sheets) =
+        use xlsxFile = ExcelPackageWithXlsxFile.Create xlsxFile
+        let rangeGettingOptions = 
+            defaultArg rangeGettingOptions RangeGettingOptions.UserRange
+
+        let r = 
+            let sheets =
+                match sheets with 
+                | None -> xlsxFile.ExcelPackage.GetValidWorksheets()
+                | Some sheetNames ->
+                    sheetNames
+                    |> List.map(fun sheetName ->
+                        xlsxFile.ExcelPackage.GetValidWorksheet(sheetName)
+                    )
+                    
+            sheets
+            |> List.map(fun sheet ->
+                let datas = sheet.ReadDatas(rangeGettingOptions)
+                StringIC sheet.Name => Table.OfArray2D(datas.Content)
+            )
+
+        r
+        |> dict
+
+    static member OfXlsxFile_ChooseSheetNames(xlsxFile: XlsxFile, sheets: string list, ?rangeGettingOptions) =
+        use xlsxFile = ExcelPackageWithXlsxFile.Create xlsxFile
+        let rangeGettingOptions = 
+            defaultArg rangeGettingOptions RangeGettingOptions.UserRange
+
+        let sheetNames = 
+            [
+                for sheet in xlsxFile.ExcelPackage.Workbook.Worksheets do
+                    yield sheet.Name
+            ]
+            |> List.map StringIC
+
+        let r = 
+            let sheets =
+                sheets
+                |> List.map StringIC
+                |> List.choose(fun sheetName ->
+                    match List.contains (sheetName) sheetNames with 
+                    | true -> 
+                        xlsxFile.ExcelPackage.GetValidWorksheet(SheetGettingOptions.SheetName sheetName)
+                        |> Some
+                    | false -> None
+                )
+                    
+            sheets
+            |> List.map(fun sheet ->
+                let datas = sheet.ReadDatas(rangeGettingOptions)
+                StringIC sheet.Name => Table.OfArray2D(datas.Content)
+            )
+
+        r
+        |> dict
+
+
     member x.SaveToXlsx(path: string, ?usingITableCellMapping:bool,  ?tableXlsxSavingOptions: TableXlsxSavingOptions) =
         let (Tables v) = x
         do (path |> XlsxPath |> ignore)
@@ -766,6 +843,7 @@ with
                 sheetName,
                 tableName,
                 columnAutofitOptions = savingOptions.ColumnAutofitOptions,
+                includingFormula = savingOptions.IncludingFormula,
                 tableStyle = savingOptions.TableStyle,
                 cellFormat = savingOptions.CellSavingFormat)
         )

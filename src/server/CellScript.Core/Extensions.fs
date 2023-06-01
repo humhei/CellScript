@@ -35,10 +35,11 @@ module private _Utils =
         match content.Style.Numberformat.Format with 
         | EqualTo "yyyy\-mm\-dd" ->
             let v = 
-                (content.Value :?> double)
-                |> System.DateTime.FromOADate
+                match content.Value with 
+                | :? double as v -> (System.DateTime.FromOADate v) :>  IConvertible
+                | v -> v :?> IConvertible
 
-            v :> IConvertible
+            v 
 
         | _ -> fixRawContent content.Value
     
@@ -202,24 +203,25 @@ module Extensions =
                         |> List.ofSeq
                         |> List.map OptionalValue.asOption
 
-                    let rec loop values accum accumValues =
+                    let rec loop accum accumValues values =
                         match values with 
                         | h :: t ->
                             match h with 
-                            | Some v -> loop t (Some v) (v :: accumValues)
+                            | Some v -> loop  (Some v) (v :: accumValues) t
                             | None -> 
                                 match accum with 
                                 | Some accum ->
-                                    loop t (Some accum) (accum :: accumValues)
+                                    loop  (Some accum) (accum :: accumValues) t
                                 | None -> 
                                     match h with 
                                     | Some h ->
-                                        loop t None (h :: accumValues)
-                                    | None -> loop t None (null :: accumValues)
+                                        loop  None (h :: accumValues) t
+                                    | None -> loop  None (null :: accumValues) t
 
                         | [] -> accumValues
 
-                    loop values None []
+                    let r =  loop None [] values
+                    r
                     |> List.rev
                     |> Series.ofValues
                     |> Series.indexWith (column.Keys)
@@ -282,8 +284,10 @@ module Extensions =
 
     type ExcelRangeBase with
         member internal x.LoadFromArray2D(array2D: IConvertible [,]) =
-            let baseArray = Array2D.toLists array2D |> Seq.map (Array.ofList >> Array.map box)
-            x.LoadFromArrays(baseArray)
+            let baseArray = 
+                Array2D.toLists array2D |> List.map (Array.ofList >> Array.map box)
+            let range = x.LoadFromArrays(baseArray)
+            range
 
 
         member range.ReadDatas() =

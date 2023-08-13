@@ -34,7 +34,7 @@
     <PackageReference Include="FParsec" Version="1.1.1" />
     <PackageReference Include="Microsoft.Bcl.AsyncInterfaces" Version="6.0.0" />
     <PackageReference Include="Shrimp.Akkling.Cluster.Intergraction" Version="0.2.96" />
-    <PackageReference Include="Shrimp.FSharp.Plus" Version="5.99.330"/>
+    <PackageReference Include="Shrimp.FSharp.Plus" Version="5.99.342"/>
     <PackageReference Include="System.Memory" Version="4.5.5" />
     <PackageReference Include="System.ValueTuple" Version="4.5.0" />
 

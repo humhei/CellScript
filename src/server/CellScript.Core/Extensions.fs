@@ -127,7 +127,7 @@ module Extensions =
                             |> Frame.sortColsByKey
                             |> Frame.mapColKeys snd
 
-                        frame.Rows.Values
+                        frame.Rows.ValuesAll
                         |> List.ofSeq
                     )
 
@@ -270,7 +270,7 @@ module Extensions =
                 Seq.append keys addtionalHeaders
 
             let values = 
-                frame.Rows.Values
+                frame.Rows.ValuesAll
                 |> Seq.mapi (fun i value -> (mapping (Seq.item i frame.RowKeys) value))
                 |> Seq.concat
                 |> array2D

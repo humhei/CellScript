@@ -124,6 +124,8 @@ module __ITableColumnKeyExtensions =
             | :? ICellValue as v -> v :?> 'Value
             | _ -> failwithf "type of cell value %A should either be ITableCellValue or IConvertible" (convertible.GetType())
 
+
+
         [<Extension>]
         static member TryGetBy(row: ObjectSeries<StringIC>, columnKey: ITableColumnKeyEx<'Value>, ?checkKeyValid) =
             let convertible = row.TryGetAsEx<obj>(columnKey.StringIC(), ?checkKeyValid = checkKeyValid)
@@ -465,7 +467,7 @@ with
                     | CellSavingFormat.KeepOrigin -> colValues :> ISeries<_>
                     | CellSavingFormat.ODBC -> 
                         let colValues = 
-                            colValues.Values
+                            colValues.ValuesAll
                             |> List.ofSeq
                             |> List.map readContentAsConvertible 
 

@@ -279,7 +279,7 @@ module _Address_Extensions =
         //    x.ReadToAddressedArrays(addresses)
 
 
-        member x.LoadFromAddressedArrays(addressArrays: AddressedArray list, ?columnAutofitOptions) =
+        member x.LoadFromAddressedArrays(addressArrays: AddressedArray list, ?columnAutofitOptions, ?columnPastingOptions) =
             for addressedArray in addressArrays do 
                 let array2D = 
                     addressedArray.Array
@@ -330,7 +330,8 @@ module _Address_Extensions =
                             addr              = addr,
                             includingFormula  = true,
                             allowRerangeTable = true,
-                            columnAutofitOptions = defaultArg columnAutofitOptions ColumnAutofitOptions.None
+                            columnAutofitOptions = defaultArg columnAutofitOptions ColumnAutofitOptions.None,
+                            ?columnPastingOptions = columnPastingOptions
                         )
 
                     | None ->
@@ -385,7 +386,7 @@ module _Address_Extensions =
             let (NamedAddressedArrayLists v) = x
             v
 
-        member x.SaveToXlsx_FromTemplate(template: XlsxFile, xlsxPath: XlsxPath) =
+        member x.SaveToXlsx_FromTemplate(template: XlsxFile, xlsxPath: XlsxPath, ?columnPastingOptions) =
             let dir = Path.GetDirectoryName (xlsxPath.Path)
             let _ = Directory.CreateDirectory(dir) |> ignore
             
@@ -394,6 +395,8 @@ module _Address_Extensions =
             | false -> File.Copy(template.Path, xlsxPath.Path, true)
 
             let excelPackage = new ExcelPackage(xlsxPath.Path)
+
+            let columnPastingOptions = defaultArg columnPastingOptions ColumnPastingOptions.ByColumnName
 
             x.Value.AsList
             |> List.iter(fun namedAddressedArray ->
@@ -407,7 +410,7 @@ module _Address_Extensions =
                 | Some sheetName ->
                     sheet.Name <- sheetName
 
-                sheet.LoadFromAddressedArrays(namedAddressedArray.AddressedArrays.AsList, columnAutofitOptions = ColumnAutofitOptions.None)
+                sheet.LoadFromAddressedArrays(namedAddressedArray.AddressedArrays.AsList, columnAutofitOptions = ColumnAutofitOptions.None, columnPastingOptions = columnPastingOptions)
             )
 
             excelPackage.Save()
@@ -415,16 +418,16 @@ module _Address_Extensions =
 
 
     type NamedAddressedArrays with 
-        member x.SaveToXlsx_FromTemplate(template: XlsxFile, xlsxPath: XlsxPath) =
+        member x.SaveToXlsx_FromTemplate(template: XlsxFile, xlsxPath: XlsxPath, ?columnPastingOptions) =
             let x = 
                 x
                 |> AtLeastOneList.singleton
                 |> NamedAddressedArrayLists
-            x.SaveToXlsx_FromTemplate(template, xlsxPath)
+            x.SaveToXlsx_FromTemplate(template, xlsxPath, ?columnPastingOptions = columnPastingOptions)
     
 
     type AddressedArrays with 
-        member x.SaveToXlsx(xlsxPath: XlsxPath, ?sheetName) =
+        member x.SaveToXlsx(xlsxPath: XlsxPath, ?sheetName, ?columnPastingOptions) =
             if File.Exists(xlsxPath.Path)
             then File.Delete(xlsxPath.Path)
 
@@ -434,16 +437,16 @@ module _Address_Extensions =
 
             let excelPackage = new ExcelPackage(xlsxPath.Path)
             let sheet = excelPackage.Workbook.Worksheets.Add(defaultArg sheetName "Sheet1")
-            sheet.LoadFromAddressedArrays(x.AsList, columnAutofitOptions = ColumnAutofitOptions.DefaultValue)
+            sheet.LoadFromAddressedArrays(x.AsList, columnAutofitOptions = ColumnAutofitOptions.DefaultValue, ?columnPastingOptions = columnPastingOptions)
             excelPackage.Save()
             excelPackage.Dispose()
 
 
 
-        member x.SaveToXlsx_FromTemplate(template: XlsxFile, xlsxPath: XlsxPath, ?templateSheetName, ?targetSheetName) =
+        member x.SaveToXlsx_FromTemplate(template: XlsxFile, xlsxPath: XlsxPath, ?templateSheetName, ?targetSheetName, ?columnPastingOptions) =
             let namedAddressedArray =
                 { SheetName = defaultArg templateSheetName "Sheet1" 
                   SpecificTargetSheetName = targetSheetName 
                   AddressedArrays = x }
             
-            namedAddressedArray.SaveToXlsx_FromTemplate(template, xlsxPath)
+            namedAddressedArray.SaveToXlsx_FromTemplate(template, xlsxPath, ?columnPastingOptions = columnPastingOptions)

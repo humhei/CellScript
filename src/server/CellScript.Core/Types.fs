@@ -41,7 +41,7 @@ module Types =
 
     let internal readContentAsConvertible (content: obj) =
         match content with 
-        | null -> null 
+        | null -> "" :> System.IConvertible
         | :? IConvertible as convertible -> convertible 
         | :? ICellValue as v -> v.Convertible 
         | _ -> failwithf "type of cell value %A should either be ICellValue or IConvertible" (content.GetType())
@@ -137,6 +137,11 @@ module Types =
     type TableNameNotFoundException(tableName, allTableNames: string list) =
         inherit Exception(sprintf "Cannot found any table named %s, avaliable tables are %A" tableName allTableNames)
 
+    /// Default ColumnPastingOptions.Directly
+    type ColumnPastingOptions =
+        | Directly = 0
+        | ByColumnName = 1
+
     type VisibleExcelWorksheet = private VisibleExcelWorksheet of ExcelWorksheet
     with 
         member x.Value =
@@ -214,7 +219,7 @@ module Types =
 
       
 
-        member x.LoadFromArraysAsTable(datas: IConvertible [, ], ?columnAutofitOptions, ?tableName: string, ?tableStyle: Table.TableStyles, ?addr, ?includingFormula, ?allowRerangeTable) =
+        member x.LoadFromArraysAsTable(datas: IConvertible [, ], ?columnAutofitOptions, ?tableName: string, ?tableStyle: Table.TableStyles, ?addr, ?includingFormula, ?allowRerangeTable, ?columnPastingOptions) =
             //let allowRerangeTable = None
             let __checkDataValid =
                 match Array2D.length1 datas, Array2D.length2 datas with 
@@ -294,6 +299,7 @@ module Types =
             //    |> List.ofSeq
             //    |> List.map(fun m -> m.Name)
 
+            let columnPastingOptions = defaultArg columnPastingOptions ColumnPastingOptions.Directly
 
 
             let addr = 
@@ -315,7 +321,6 @@ module Types =
                     let columns = addr.Columns
 
                     let row_substract = rows - array2D_rows
-                    //let column_substract = columns - array2D_columns
 
                     match row_substract with 
                     | 0 -> ()
@@ -342,104 +347,118 @@ module Types =
                     
                     | _ -> failwith "Invalid token"
 
-                    //match column_substract with 
-                    //| 0 -> ()
-                    //| BiggerThan 0 ->
-                    //    findedTable.DeleteColumnsBack(abs column_substract)
-                    //    |> ignore
-
-                    //| SmallerThan 0 -> 
-                    //    findedTable.Columns.Add(abs column_substract)
-                    //    |> ignore
-                    
-                    //| _ -> failwith "Invalid token"
-
-                    let __checkTableValid =
-                        let addr = findedTable.Address
-                        match addr.Rows = array2D_rows(*, addr.Columns = array2D_columns*) with 
-                        | true(*, true*) -> ()
-                        | _ -> failwithf "Invalid token, new table addr %A is not consistent to %A" addr.Address (array2D_columns, array2D_rows)
-
-                    //worksheet.Cells.["K10"].Value <- "Yes"
-                    //let addr = "C21:D24"
+                    match columnPastingOptions with 
+                    | ColumnPastingOptions.Directly ->
                         
-                    //let datas = datas.[1.., *]
+                        let column_substract = columns - array2D_columns
+                        match column_substract with 
+                        | 0 -> ()
+                        | BiggerThan 0 ->
+                            findedTable.DeleteColumnsBack(abs column_substract)
+                            |> ignore
 
-                    let addr = 
-                        findedTable.Address.Address
-                        |> ComparableExcelAddress.OfAddress
-                    //let originWidth  = worksheet.Cells.[addr.Address].EntireColumn.Width
-                    //let originWidth  = worksheet.Cells.["A1"].EntireColumn.Width
+                        | SmallerThan 0 -> 
+                            findedTable.Columns.Add(abs column_substract)
+                            |> ignore
+                    
+                        | _ -> failwith "Invalid token"
+
+                        let __checkTableValid =
+                            let addr = findedTable.Address
+                            match addr.Rows = array2D_rows, addr.Columns = array2D_columns with 
+                            | true, true -> ()
+                            | _ -> failwithf "Invalid token, new table addr %A is not consistent to %A" addr.Address (array2D_columns, array2D_rows)
+
+                        
+                        worksheet.Cells.[addr.Address].LoadFromArray2D(datas)
+                        |> ignore
+
+                        findedTable
+
+                    | ColumnPastingOptions.ByColumnName ->
+                        let __checkTableValid =
+                            let addr = findedTable.Address
+                            match addr.Rows = array2D_rows(*, addr.Columns = array2D_columns*) with 
+                            | true(*, true*) -> ()
+                            | _ -> failwithf "Invalid token, new table addr %A is not consistent to %A" addr.Address (array2D_columns, array2D_rows)
+
+                        
+                        //let datas = datas.[1.., *]
+
+                        let addr = 
+                            findedTable.Address.Address
+                            |> ComparableExcelAddress.OfAddress
+                        //let originWidth  = worksheet.Cells.[addr.Address].EntireColumn.Width
+                        //let originWidth  = worksheet.Cells.["A1"].EntireColumn.Width
                  
-                    let columns = 
-                        let headers = 
-                            let range = 
-                                let columnCount = findedTable.Columns.Count
-                                findedTable.Range.Offset(0, 0, 1, columnCount)
-                            
-                            range
-                            |> List.ofSeq
-                            |> List.map(fun m -> m.Text)
-
                         let columns = 
-                            findedTable.Columns
-                            |> List.ofSeq
+                            let headers = 
+                                let range = 
+                                    let columnCount = findedTable.Columns.Count
+                                    findedTable.Range.Offset(0, 0, 1, columnCount)
+                            
+                                range
+                                |> List.ofSeq
+                                |> List.map(fun m -> m.Text)
 
-                        (headers, columns)
-                        ||> List.map2(fun header column ->
-                            {|
-                                Name = header
-                                Column = column
-                            |}
-                        )
+                            let columns = 
+                                findedTable.Columns
+                                |> List.ofSeq
 
-                    let headers = 
-                        match columns with 
-                        | [column] -> [StringIC column.Name]
-                        | _ -> headers
+                            (headers, columns)
+                            ||> List.map2(fun header column ->
+                                {|
+                                    Name = header
+                                    Column = column
+                                |}
+                            )
 
-                    let columnNames =
+                        let headers = 
+                            match columns with 
+                            | [column] -> [StringIC column.Name]
+                            | _ -> headers
+
+                        let columnNames =
+                            columns
+                            |> List.map(fun m -> StringIC m.Name)
+
                         columns
-                        |> List.map(fun m -> StringIC m.Name)
+                        |> List.iteri(fun columnID column ->
+                            let columnName = column.Name
+                            let finedHeader =
+                                headers
+                                |> List.tryFindIndex(fun header -> header = StringIC columnName)
 
-                    columns
-                    |> List.iteri(fun columnID column ->
-                        let columnName = column.Name
-                        let finedHeader =
+                            match finedHeader with 
+                            | None -> ()
+                            | Some finedHeader ->
+                                let datas = datas.[1.., finedHeader]
+                                let addr2 = addr.Offset(1, columnID, datas.Length-1, 0)
+                                worksheet.Cells.[addr2.Address].LoadFromCollection(datas)
+                                |> ignore
+                        )
+
+                        let addOtherColumn =
                             headers
-                            |> List.tryFindIndex(fun header -> header = StringIC columnName)
-
-                        match finedHeader with 
-                        | None -> ()
-                        | Some finedHeader ->
-                            let datas = datas.[1.., finedHeader]
-                            let addr2 = addr.Offset(1, columnID, datas.Length-1, 0)
-                            worksheet.Cells.[addr2.Address].LoadFromCollection(datas)
-                            |> ignore
-                    )
-
-                    let addOtherColumn =
-                        headers
-                        |> List.indexed
-                        |> List.filter(fun (i, header) ->
-                            List.contains header columnNames
-                            |> not
-                        )
-                        |> List.iter(fun (i, header) ->
-                            let newColumn = findedTable.Columns.Add(1)
-                            let datas = datas.[0.., i]
-                            newColumn.LoadFromCollection(datas)
-                            |> ignore
-                        )
+                            |> List.indexed
+                            |> List.filter(fun (i, header) ->
+                                List.contains header columnNames
+                                |> not
+                            )
+                            |> List.iter(fun (i, header) ->
+                                let newColumn = findedTable.Columns.Add(1)
+                                let datas = datas.[0.., i]
+                                newColumn.LoadFromCollection(datas)
+                                |> ignore
+                            )
 
            
 
-                    //worksheet.Cells.[addr.Address].LoadFromArray2D(datas)
-                    //|> ignore
+                        //worksheet.Cells.[addr.Address].LoadFromArray2D(datas)
+                        //|> ignore
 
-                    //worksheet.Column(1).Width <- 800
 
-                    findedTable
+                        findedTable
 
                 | Some tb, false ->
                     failwithf "Duplicate table name %s" tb.Name

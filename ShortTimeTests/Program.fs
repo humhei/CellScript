@@ -50,19 +50,24 @@ let main argv =
         |> XlsxFile
 
     let values = 
-        @"\\2021-pc\2023-已完成出CTP文件2\自动打印\资料\中达客户资料.xlsx"
+        @"\\2021-pc\2023-已完成出CTP文件2\自动打印\资料\中达产品资料.xlsx"
         |> XlsxFile
         |> Table.OfXlsxFile 
+        |> Table.mapFrame (Frame.filterCols(fun col _ ->
+            match col.Value with 
+            | "零售价" -> false
+            | _ -> true
+        ))
 
     let addressedArray = 
         { AddressedArray.ofTable "A1" (values) with 
-            SpecificName = Some "客户资料"
+            SpecificName = Some "产品资料"
         } 
         |> List.singleton
         |> AddressedArrays.OfList
 
     let named =
-        { NamedAddressedArrays.SheetName = "客户资料修复"
+        { NamedAddressedArrays.SheetName = "产品资料修复"
           SpecificTargetSheetName = None 
           AddressedArrays = addressedArray }
 

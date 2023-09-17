@@ -441,29 +441,14 @@ with
         let newArray2D = array2D.[1.., *]
         ExcelArray.Convert newArray2D
 
-
-    member x.AddToExcelPackage
-        (excelPackage: ExcelPackage,
-         sheetName,
-         tableName,
-         ?includingFormula,
-         ?addr, 
-         ?columnAutofitOptions,
-         ?tableStyle,
-         ?cellFormat) =
-
-        let worksheet = excelPackage.GetOrAddWorksheet(sheetName)
-            
-        let cellFormat = defaultArg cellFormat CellSavingFormat.KeepOrigin
-
-
+    member x.ConvertDataForSave(cellSavingFormat: CellSavingFormat) =
         let x = 
             x.MapFrame(fun frame ->
                 let frame = Frame.indexRowsOrdinally frame
 
                 frame
                 |> Frame.mapCols(fun colkey colValues ->
-                    match cellFormat with 
+                    match cellSavingFormat with 
                     | CellSavingFormat.KeepOrigin -> colValues :> ISeries<_>
                     | CellSavingFormat.ODBC -> 
                         let colValues = 
@@ -544,6 +529,25 @@ with
                 )
             )
 
+        x
+
+
+
+    member x.AddToExcelPackage
+        (excelPackage: ExcelPackage,
+         sheetName,
+         tableName,
+         ?includingFormula,
+         ?addr, 
+         ?columnAutofitOptions,
+         ?tableStyle,
+         ?cellFormat) =
+
+        let worksheet = excelPackage.GetOrAddWorksheet(sheetName)
+            
+        let cellFormat = defaultArg cellFormat CellSavingFormat.KeepOrigin
+
+        let x = x.ConvertDataForSave(cellFormat)
 
         let array2D = x.ToArray2D()
 

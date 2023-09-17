@@ -580,8 +580,8 @@ module Types =
     with 
         /// SheetGettingOptions.SheetNameOrSheetIndex (StringIC SHEET1, 0)
         static member DefaultValue = 
-            //SheetGettingOptions.SheetIndex 0
             SheetGettingOptions.SheetNameOrSheetIndex (StringIC SHEET1, 0)
+            //SheetGettingOptions.SheetIndex 0
 
 
 
@@ -592,16 +592,21 @@ module Types =
             |> Seq.filter(fun m -> m.Hidden = eWorkSheetHidden.Visible)
             |> Seq.map VisibleExcelWorksheet
 
-        member excelPackage.GetVisibleSheetByIndex(index) =
+        member excelPackage.TryGetVisibleSheetByIndex(index) =
             let worksheet =
                 excelPackage.Workbook.Worksheets
                 |> Seq.filter(fun m -> m.Hidden = eWorkSheetHidden.Visible)
                 |> Seq.tryItem index
 
             match worksheet with 
-            | Some worksheet -> worksheet
-            | None -> failwithf "Cannot get visible worksheet %A from %s, please check xlsx file" index excelPackage.File.FullName
+            | Some worksheet -> Result.Ok worksheet
+            | None -> 
+                sprintf "Cannot get visible worksheet %d from %s, please check xlsx file" index excelPackage.File.FullName
+                |> Result.Error
 
+        member excelPackage.GetVisibleSheetByIndex(index) =
+            excelPackage.TryGetVisibleSheetByIndex(index)
+            |> Result.getOrFail
 
         member excelPackage.GetVisibleWorksheet (options) =
             let excelworksheet = 
@@ -618,8 +623,26 @@ module Types =
                     | Some worksheet -> worksheet
                     | None -> excelPackage.GetVisibleSheetByIndex index
 
+  
 
             VisibleExcelWorksheet.Create excelworksheet
+
+        member excelPackage.TryGetValidWorksheet (options) =
+
+            let r = 
+                excelPackage.GetVisibleWorksheet(options)
+                |> ValidExcelWorksheet.TryCreate
+
+            match r with 
+            | Result.Ok r -> Result.Ok r
+            | Result.Error _ -> 
+                match options with 
+                | SheetGettingOptions.SheetName _
+                | SheetGettingOptions.SheetIndex _ -> r
+                | SheetGettingOptions.SheetNameOrSheetIndex (sheetName, index) ->
+                    excelPackage.GetVisibleSheetByIndex index
+                    |> VisibleExcelWorksheet.Create
+                    |> ValidExcelWorksheet.TryCreate
 
         member excelPackage.GetValidWorksheet (options) =
             excelPackage.GetVisibleWorksheet(options)

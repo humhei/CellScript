@@ -1,4 +1,5 @@
 namespace CellScript.Core
+#nowarn "0104"
 open Deedle
 open CellScript.Core.Extensions
 open Akka.Util
@@ -6,14 +7,10 @@ open System
 open Shrimp.FSharp.Plus
 open System.IO
 open OfficeOpenXml
-open Newtonsoft.Json
-open CsvUtils
 open System.Runtime.CompilerServices
 open FParsec
-open FParsec.CharParsers
 open CellScript.Core.Constrants
 open System.Collections.Generic
-open CsvHelper
 
 
 
@@ -59,8 +56,7 @@ type ITableColumnKeyEx<'Value when 'Value :> ICellValue> =
 
 [<AutoOpen>]
 module __ITableColumnKeyExtensions =
-
-    open Deedle
+    
     [<Extension>]
     type _ITableColumnKeyExtensions = 
         [<Extension>]
@@ -82,6 +78,9 @@ module __ITableColumnKeyExtensions =
         static member GetBy(row: ObjectSeries<StringIC>, columnKey: ITableColumnKey<'Value>) =
             row.GetAs<'Value>(columnKey.StringIC())
 
+        [<Extension>]
+        static member GetField<'T>(row: ObjectSeries<StringIC>, columnKey: string) =
+            row.GetAs<'T>(StringIC columnKey)
 
         [<Extension>]
         static member TryGetBy(row: ObjectSeries<StringIC>, columnKey: ITableColumnKey<'Value>, ?checkKeyValid) =
@@ -256,6 +255,9 @@ module __ITableColumnKeyExtensions =
                 frame.GroupRowsBy(columnKey)
 
 
+type private HeadOrEnd =
+    | Head = 0
+    | End = 1
 
 
 
@@ -276,7 +278,10 @@ with
     member x.GetColumnBy(columnKey: ITableColumnKey<_>) = x.AsFrame.GetColumnBy(columnKey)
     member x.GetColumnBy(columnKey: ITableColumnKeyEx<_>) = x.AsFrame.GetColumnBy(columnKey)
 
-
+    [<System.ObsoleteAttribute>]
+    static member Internal_OfFrame(frame: Frame<int, StringIC>) =
+        ExcelFrame frame
+        |> Table
 
     member table.MapFrame(mapping) =
         ExcelFrame.mapFrame mapping table.AsExcelFrame
@@ -287,47 +292,76 @@ with
     member x.IsEmpty = x.RowCount = 0
     member x.Headers = x.AsFrame.ColumnKeys
 
-    member x.MoveColumnsToHead(columnKeys: StringIC list) =
+    member private x.MoveColumnsTo(columnKeys: StringIC list, headOrEnd: HeadOrEnd) =
 
         let originHeaders = 
             x.Headers
             |> List.ofSeq
 
-        match columnKeys.Length <= originHeaders.Length with 
-        | true -> 
-            match List.take columnKeys.Length originHeaders = columnKeys with 
-            | true -> x
-            | false ->
-                let originHeaders =
-                    originHeaders
-                    |> List.mapi(fun originIndex originHeader ->
-                        let index = 
-                            columnKeys
-                            |> List.tryFindIndex(fun m -> m = originHeader)
+        let alreadyDone = 
+            (
+                match originHeaders.Length > columnKeys.Length with 
+                | true ->
+                    match headOrEnd with 
+                    | HeadOrEnd.Head -> List.take columnKeys.Length originHeaders = columnKeys
+                    | HeadOrEnd.End -> 
+                        List.skip (originHeaders.Length - columnKeys.Length) originHeaders = columnKeys
+                | false -> false
+            )
+            || (
+                let intersected = Set.intersect (Set.ofList originHeaders) (Set.ofList columnKeys)
+                intersected.Count = 0
+            )
 
-                        let index = 
-                            match index with 
-                            | Some index -> -1, index
-                            | None -> 0, originIndex
+        match alreadyDone with 
+        | true -> x
+        | false ->
+            let originHeaders =
+                originHeaders
+                |> List.mapi(fun originIndex originHeader ->
+                    let index = 
+                        columnKeys
+                        |> List.tryFindIndex(fun m -> m = originHeader)
 
-                        originHeader, index
-                    )
-                    |> dict
+                    let index = 
+                        match index with 
+                        | Some index -> 
+                            let sortingIndex = 
+                                match headOrEnd with 
+                                | HeadOrEnd.Head -> -1
+                                | HeadOrEnd.End -> 1
 
-                x.MapFrame(fun frame ->
-                    frame
-                    |> Frame.mapColKeys(fun colKey -> originHeaders.[colKey], colKey)
-                    |> Frame.sortColsByKey
-                    |> Frame.mapColKeys snd
+                            sortingIndex, index
+                        | None -> 0, originIndex
+
+                    originHeader, index
                 )
+                |> dict
 
-        | false -> 
-            let notExistsHeader =
-                columnKeys
-                |> List.find(fun m -> not (List.contains m originHeaders))
+            x.MapFrame(fun frame ->
+                frame
+                |> Frame.mapColKeys(fun colKey -> originHeaders.[colKey], colKey)
+                |> Frame.sortColsByKey
+                |> Frame.mapColKeys snd
+            )
 
-            failwithf "%A not exists in headers" notExistsHeader
+        //match columnKeys.Length <= originHeaders.Length with 
+        //| true -> 
 
+
+        //| false -> 
+        //    let notExistsHeader =
+        //        columnKeys
+        //        |> List.find(fun m -> not (List.contains m originHeaders))
+
+        //    failwithf "%A not exists in headers" notExistsHeader
+
+
+    member x.MoveColumnsToHead(columnKeys: StringIC list) =
+        x.MoveColumnsTo(columnKeys, HeadOrEnd.Head)
+
+    member x.MoveColumnsToEnd(columnKeys: StringIC list) =
+        x.MoveColumnsTo(columnKeys, HeadOrEnd.End)
 
     member x.AddColumns(columns, ?position) =
         let columns = List.ofSeq columns 
@@ -416,11 +450,30 @@ with
 
 
     /// with header
-    member frame.ToArray2D() = 
+    member frame.ToArray2D(?eraseAutomaticHeaders: bool) = 
+        let headers = 
+            frame.Headers
+            |> List.ofSeq
+
+
+        let headers = 
+            match defaultArg eraseAutomaticHeaders false with 
+            | true -> 
+                headers
+                |> List.map(fun m -> 
+                    match m.Value with 
+                    | String.StartsWithIC "CellScriptColumn" -> ""
+                    | _ -> m.Value
+                )
+
+            | false -> 
+                headers
+                |> List.map(fun m -> m.Value)
+
         let header = 
-            frame.Headers 
-            |> Seq.map (fun m -> (m.Value :> IConvertible))
-            |> List.ofSeq 
+            headers 
+            |> List.map (fun m -> (m :> IConvertible))
+
 
         let contents = 
             frame.AsExcelFrame
@@ -436,10 +489,13 @@ with
     member private x.FormatText = 
         x.AsFrame.FillMissing("").Format(50)
     
-    member x.ToExcelArray() =
+    /// without header
+    member x.ToExcelArray(?withHeader) =
+        
         let array2D = x.ToArray2D()
         let newArray2D = array2D.[1.., *]
         ExcelArray.Convert newArray2D
+
 
     member x.ConvertDataForSave(cellSavingFormat: CellSavingFormat) =
         let x = 
@@ -458,35 +514,9 @@ with
 
                         let numbers =
                             colValues
-                            |> List.choose(fun m ->
+                            |> List.choose(fun m -> 
                                 let m = m.ToString()
-                                match m with 
-                                | String.StartsWith "0" -> None
-                                | String.Contains "," -> None
-                                | _ ->
-                                    match System.Double.TryParse (m) with 
-                                    | true, v -> 
-                                        match m.Contains "." with 
-                                        | true ->
-                                            let right = m.RightOfF "."    
-                                            match right.Trim() with 
-                                            | "" -> None
-                                            | _ ->
-                                                match System.Int32.TryParse right with 
-                                                | true, 0 -> None
-                                                | false, _ -> None
-                                                | _ ->  
-                                                    //Some v
-                                                    match right.Length < 10 with 
-                                                    | true -> Some (v)
-                                                    | false -> None
-
-                                        | false ->
-                                            //Some v
-                                            match v.ToString().Length < 10 with 
-                                            | true -> Some (v)
-                                            | false -> None
-                                    | false, _ -> None
+                                CellText.getAsODBCNumber m
                             )
 
                         match numbers.Length = colValues.Length with 
@@ -671,6 +701,12 @@ with
         |> Table.OfArray2D
 
 
+    static member private OfFrame_AllowICellValue (frame: Frame<int, StringIC>) =
+        frame
+        |> Frame.mapValues fixRawContent_AllowCellValue
+        |> ExcelFrame
+        |> Table.Table
+
     static member private OfFrame (frame: Frame<int, StringIC>) =
         frame
         |> Frame.mapValues fixRawContent
@@ -687,6 +723,11 @@ with
         (Frame.ofRecords records)
         |> Frame.mapColKeys StringIC
         |> Table.OfFrame
+
+    static member OfRecords_AllowICellValue (records: seq<'record>) =
+        (Frame.ofRecords records)
+        |> Frame.mapColKeys StringIC
+        |> Table.OfFrame_AllowICellValue
 
     static member OfColumns (columns: seq<StringIC * Series<int, ConvertibleUnion>>) =
         let columns =
@@ -707,6 +748,13 @@ with
         let rows = rows |> Seq.map (Series.mapValues(fun m -> m.Value))
         Table.OfRowsOrdinal rows
 
+    static member OfRowsOrdinal_AllowICellValue (rows: Series<StringIC, obj> seq) =
+        let frame = 
+            Frame.ofRowsOrdinal rows
+            |> Frame.mapRowKeys int
+
+        frame
+        |> Table.OfFrame_AllowICellValue
 
     static member OfRowsOrdinal (rows: seq<Observations>) =
         let rows = 
@@ -730,7 +778,7 @@ with
         
         Table.OfArray2D(excelRangeInfo.Content |> Array2D.map (fun m -> m.Value))
 
-    static member OfXlsxFile(xlsxFile: XlsxFile, ?rangeGettingOptions, ?sheetGettingOptions) =
+    static member OfXlsxFileWithSheetName(xlsxFile: XlsxFile, ?rangeGettingOptions, ?sheetGettingOptions) =
         let rangeGettingOptions = 
             defaultArg rangeGettingOptions RangeGettingOptions.UserRange
 
@@ -738,8 +786,12 @@ with
             defaultArg sheetGettingOptions SheetGettingOptions.DefaultValue
 
         let excelRangeInfo = ExcelRangeContactInfo.readFromFile rangeGettingOptions sheetGettingOptions xlsxFile
-        
-        Table.OfArray2D(excelRangeInfo.Content |> Array2D.map(fun m -> m.Value))
+        let sheetName = StringIC excelRangeInfo.SheetName
+        sheetName => Table.OfArray2D(excelRangeInfo.Content |> Array2D.map(fun m -> m.Value))
+
+    static member OfXlsxFile(xlsxFile: XlsxFile, ?rangeGettingOptions, ?sheetGettingOptions) =
+        Table.OfXlsxFileWithSheetName(xlsxFile, ?rangeGettingOptions = rangeGettingOptions, ?sheetGettingOptions = sheetGettingOptions)
+        |> snd
 
     static member OfCsvFile(csvFile: CsvFile) =
         Frame.ReadCsv(csvFile.Path)
@@ -864,6 +916,14 @@ with
 
 [<RequireQualifiedAccess>]
 module Table =
+    
+    type Internal_EmptyRecord =
+        { EmptyText: string }
+
+    let empty = 
+        lazy
+            Table.OfRecords<Internal_EmptyRecord> []
+
     let mapFrame mapping (table: Table) =
         table.MapFrame mapping
 
@@ -920,6 +980,7 @@ module Table =
         )
         |> ExcelArray
 
+    /// Frame.indexRowsOrdinally
     let concat_RefreshRowKeys (tables: AtLeastOneList<Table>) =
         tables.Head
         |> mapFrame(fun _ ->
@@ -1008,6 +1069,8 @@ type TableConcatProxy<'T>(getter: 'T -> Table, setter: Table -> 'T) =
 
     member x.Bind(getter': 'T2 -> 'T, setter': 'T -> 'T2) =
         TableConcatProxy(getter' >> getter, setter >> setter')
+
+
 
 
         

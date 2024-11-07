@@ -7,42 +7,123 @@ open System.IO
 open System.Collections.Generic
 open System.Runtime.CompilerServices
 open Shrimp.FSharp.Plus
+open Shrimp.FSharp.Plus.Text
 
 [<AutoOpen>]
 module private _Utils =
+    
+    let internal fixRawContent_MapText  (content: obj) f =
+        match content with
+        | :? ConvertibleUnion as v -> v.Value
+        | null -> null
+        | :? ExcelErrorValue -> null
+        | :? string as text -> 
+            let text = text.Replace(Text.MAX_CHAR_65534, "")
+            match text.Trim() with 
+            | "" -> null 
+            | text -> (f text) :> IConvertible
+        | :? IConvertible as v -> 
+            match v with 
+            | :? DBNull -> null
+            | _ -> v
+        | _ -> failwithf "Cannot convert to %A to Iconvertible" (content.GetType())
+
+
     let internal fixRawContent (content: obj) =
         match content with
         | :? ConvertibleUnion as v -> v.Value
         | null -> null
         | :? ExcelErrorValue -> null
         | :? string as text -> 
+            let text = text.Replace(Text.MAX_CHAR_65534, "")
             match text.Trim() with 
             | "" -> null 
-            | _ -> text :> IConvertible
+            | text -> text :> IConvertible
         | :? IConvertible as v -> 
             match v with 
             | :? DBNull -> null
             | _ -> v
-        | _ -> failwithf "Cannot convert to %A to iconvertible" (content.GetType())
+        | _ -> failwithf "Cannot convert to %A to Iconvertible" (content.GetType())
 
     let private patterns = 
         lazy 
             System.Globalization.DateTimeFormatInfo.CurrentInfo.GetAllDateTimePatterns()
             |> List.ofArray
 
-    let internal fixRawCell (content: ExcelRangeBase) =
+    type ExcelRangeBase with 
+        member internal x.IsHidden() =
+            x.EntireColumn.Hidden || x.EntireRow.Hidden
+
+    let internal fixRawCell (content: ExcelRangeBase, includeHided: bool) =
         
-        match content.Style.Numberformat.Format with 
-        | EqualTo "yyyy\-mm\-dd" ->
-            let v = 
-                match content.Value with 
-                | :? double as v -> (System.DateTime.FromOADate v) :>  IConvertible
-                | v -> v :?> IConvertible
+        match (not includeHided) && (content.IsHidden()) with
+        | true -> "" :> IConvertible
+        | _ ->
+            match content.Style.Numberformat.Format with 
+            | "yyyy\-mm\-dd" ->
+                let v = 
+                    match content.Value with 
+                    | :? double as v -> (System.DateTime.FromOADate v) :>  IConvertible
+                    | v -> v :?> IConvertible
+                v 
 
-            v 
+            | String.TrimStartIC "General" ending -> 
+                let ending = ending.Trim('\"')
+                match ending with 
+                | "" -> fixRawContent content.Value
+                | ending ->
+                    let v = fixRawContent content.Value |> ConvertibleUnion.Convert
+                    match v.Text.Trim() with 
+                    | "" -> "" :> IConvertible
+                    | _ -> (v.Text + ending) :> IConvertible
 
-        | _ -> fixRawContent content.Value
-    
+            | "#,##0" ->
+                fixRawContent_MapText content.Value (fun text ->
+                    text.Replace(",", "")
+                    |> System.Double.Parse
+                )
+
+
+            | _ -> fixRawContent content.Text
+
+[<RequireQualifiedAccess>]
+module CellText =
+    let getAsODBCNumber(m: string) =
+        match m with 
+        | String.StartsWith "0" -> 
+            match m.Length with 
+            | 1 -> Some (System.Double.Parse m)
+            | _ -> None
+        | String.Contains "," -> None
+        | _ ->
+            match System.Double.TryParse (m) with 
+            | true, v -> 
+                match m.RightOf "."   with 
+                | Some right ->
+                    match right.Trim() with 
+                    | "" -> None
+                    | right ->
+                        let lastChar = right.Chars(right.Length-1)
+                        match lastChar with 
+                        | '0' -> None
+                        | _ ->
+                            match System.Int32.TryParse right with 
+                            | true, 0 -> None
+                            | false, _ -> None
+                            | _ ->  
+                                //Some v
+                                match right.Length < 10 with 
+                                | true -> Some (v)
+                                | false -> None
+                    
+                | None ->
+                    //Some v
+                    match v.ToString().Length < 10 with 
+                    | true -> Some (v)
+                    | false -> None
+            | false, _ -> None
+
+
 
 module Constrants = 
     let [<Literal>] SHEET1 = "Sheet1"
@@ -53,8 +134,10 @@ module Constrants =
 
 
 
+
 module Extensions =
 
+    
 
     [<RequireQualifiedAccess>]
     module Array2D =
@@ -84,11 +167,53 @@ module Extensions =
             }
             |> array2D
 
- 
+        let concat__addSuffixEmptyColumnsToForceSameColumnLength emptyValue (rowLists: list<'a [,]>) =
+            let maxLength = 
+                rowLists
+                |> List.map Array2D.length2
+                |> List.max
+
+            rowLists
+            |> List.collect(fun rows ->
+                let columnLength = Array2D.length2 rows
+                match columnLength = maxLength with 
+                | true -> toLists rows
+                | false ->
+                    let rows = toLists rows
+                    let substract = maxLength - columnLength
+                    rows
+                    |> List.map(fun row -> 
+                        row @ List.replicate substract emptyValue
+                    )
+            )
+
+
+            |> array2D
+
+
+    let lists_ForceSameLength emptyValue (rowLists: list<list<'a>>) =
+        let maxLength = 
+            rowLists
+            |> List.map List.length
+            |> List.max
+
+        rowLists
+        |> List.map(fun rows ->
+            let columnLength = List.length rows
+            match columnLength = maxLength with 
+            | true -> rows
+            | false ->
+                let substract = maxLength - columnLength
+                rows @ List.replicate substract emptyValue
+        )
+
+
+
+
 
     [<RequireQualifiedAccess>]
     module internal Frame =
-
+        /// Frame.indexRowsOrdinally
         let Concat_RefreshRowKeys(frames: AtLeastOneList<Frame<_, _>>) =
             match frames.AsList with 
             | [ frame ] -> Frame.indexRowsOrdinally frame
@@ -235,9 +360,24 @@ module Extensions =
         let internal fillEmptyUp frame =
             Frame.mapColValues (fun (column: ObjectSeries<_>) ->
                 let values: list<obj option> = 
-                    column.GetAllValues()
-                    |> List.ofSeq
+                    let values = 
+                        column.GetAllValues()
+                        |> List.ofSeq
+
+                    values
                     |> List.map OptionalValue.asOption
+                    |> List.map(fun m ->
+                        match m with 
+                        | Some (v) ->
+                            match v with 
+                            | :? string as text -> 
+                                match text.Trim() with 
+                                | "" -> None
+                                | _ -> Some text
+
+                            | _ -> Some v
+                        | None -> None
+                    )
 
                 let rec loop values accum accumValues =
                     match values with 
@@ -256,9 +396,15 @@ module Extensions =
 
                     | [] -> accumValues
 
-                loop values None []
-                |> List.rev
-                |> Series.ofValues
+                let newValues = 
+                    loop values None []
+                    |> List.rev
+
+                let series = 
+                    newValues
+                    |> Series.ofValues
+
+                series
                 |> Series.indexWith (column.Keys)
 
                 ) frame
@@ -281,6 +427,56 @@ module Extensions =
                 Frame.ofArray2D values
                 |> Frame.indexColsWith headers
 
+    type internal MergeCellAddrs = 
+        { Addresses: ComparableExcelAddress list 
+          HiddenCache: ConcurrentDictionary<ComparableExcelAddress, bool> }
+    with 
+        member x.AsList = x.Addresses
+
+        static member Create(mergedCells: ExcelWorksheet.MergeCellsCollection) =
+            let addresses = 
+                mergedCells
+                |> List.ofSeq
+                |> List.map(fun m -> ComparableExcelAddress.OfAddress m)
+            
+            { Addresses = addresses
+              HiddenCache = ConcurrentDictionary() }
+
+        member x.TryGetMergedOf(sheet: ExcelWorksheet, addr: ComparableExcelCellAddress) =
+            let addr = 
+                x.AsList
+                |> List.tryFind(fun m ->
+                    m.Contains addr
+                )
+
+            addr
+            |> Option.map(fun addr ->
+                let isAllCellsHidden = 
+                    x.HiddenCache.GetOrAdd(addr, valueFactory = fun addr ->
+                        let r = sheet.Cells.[addr.Address]
+                        let isAllCellsHidden = 
+                            r
+                            |> Seq.forall(fun m ->
+                                m.IsHidden()
+                            )
+
+                        isAllCellsHidden
+                    )
+
+                {|
+                    IsAllCellsHidden = isAllCellsHidden
+                    MergedAddr = addr
+                |}
+
+                
+            )
+
+
+    type ExcelWorksheet with 
+        member internal x.GetMergeCellAddrs() =
+            x.MergedCells
+            |> MergeCellAddrs.Create
+
 
     type ExcelRangeBase with
         member internal x.LoadFromArray2D(array2D: IConvertible [,]) =
@@ -289,19 +485,88 @@ module Extensions =
             let range = x.LoadFromArrays(baseArray)
             range
 
+        member private range.ToLists() =
+            let content =
+                [ for i = 0 to range.Rows-1 do 
+                    yield
+                        [ for j = 0 to range.Columns-1 do yield (range.Offset(i, j, 1, 1)) ]
+                ] 
 
-        member range.ReadDatas() =
+            content
+
+        member internal range.ReadDatasWithUserState_TrackMergeRange(fUserState, includeHided, mergedCellAddrs: MergeCellAddrs option) =
             //let rowStart = range.Start.Row
             //let rowEnd = range.End.Row
             //let columnStart = range.Start.Column
             //let columnEnd = range.End.Column
+            let fixRawCellEx (currentRange: ExcelRangeBase, includedHided) =
+                match mergedCellAddrs with 
+                | None -> fixRawCell(currentRange, includedHided)
+                | Some mergedCellAddrs ->
+                    match includedHided with 
+                    | true -> fixRawCell(currentRange, includedHided)
+                    | false ->
+                        match currentRange.Merge with 
+                        | false -> fixRawCell(currentRange, includedHided)
+
+                        | true ->
+                            let r = fixRawCell(currentRange, true)
+                            let isEmpty = 
+                                match r with 
+                                | null -> true
+                                | :? string as v ->
+                                    match v.Trim() with 
+                                    | "" -> true
+                                    | _ -> false
+
+                                | _ -> false
+
+                            match isEmpty with 
+                            | true -> ""
+                            | false -> 
+                                match currentRange.IsHidden() with 
+                                | true -> 
+                                    let currentRangeAddr = 
+                                        currentRange
+                                        |> ComparableExcelCellAddress.OfRange
+
+                                    match mergedCellAddrs.TryGetMergedOf(range.Worksheet, currentRangeAddr) with 
+                                    | None -> failwith "Invalid token"
+                                    | Some merged ->
+                                        match merged.IsAllCellsHidden with 
+                                        | true -> ""
+                                        | false -> r
+
+                                | false -> r
+
             let content =
                 array2D
                     [ for i = 0 to range.Rows-1 do 
                         yield
-                            [ for j = 0 to range.Columns-1 do yield fixRawCell (range.Offset(i, j, 1, 1)) ]
+                            [ for j = 0 to range.Columns-1 do 
+                                let currentRange = (range.Offset(i, j, 1, 1))
+                                yield (
+                                    {|
+                                        Content = 
+                                            fixRawCellEx (currentRange, includeHided)
+                                            |> ConvertibleUnion.Convert
+
+                                        UserState = fUserState currentRange
+                                    |}
+                                )
+                            ]
                     ] 
-                |> Array2D.map ConvertibleUnion.Convert
 
             content
 
+        member range.ReadDatasWithUserState(fUserState, includeHided) =
+            range.ReadDatasWithUserState_TrackMergeRange(fUserState, includeHided, mergedCellAddrs = None)
+
+
+        member range.ReadDatas(includeHided) =
+            //let rowStart = range.Start.Row
+            //let rowEnd = range.End.Row
+            //let columnStart = range.Start.Column
+            //let columnEnd = range.End.Column
+            range.ReadDatasWithUserState(ignore, includeHided)
+            |> Array2D.map(fun m -> m.Content)

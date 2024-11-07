@@ -3,10 +3,9 @@ open System
 open System.IO
 open Shrimp.FSharp.Plus
 open System.Diagnostics
-open CellScript.Core.Extensions
 open OfficeOpenXml
 
-[<DebuggerDisplay("{ExcelCellAddress}")>]
+[<DebuggerDisplay("{ExcelCellAddressText}")>]
 type ComparableExcelCellAddress =
     { Row: int 
       Column: int }
@@ -18,8 +17,18 @@ with
     static member OfAddress(address: string) =
         ComparableExcelCellAddress.OfExcelCellAddress(ExcelCellAddress(address))
 
+    static member OfRange(address: ExcelRangeBase) =
+        match address.Columns, address.Rows with 
+        | 1, 1 ->
+            address.Start
+            |> ComparableExcelCellAddress.OfExcelCellAddress
+
+        | _ -> failwithf "Cannot create ComparableExcelCellAddress from %s" address.Address
+
     member x.ExcelCellAddress =
         ExcelCellAddress(x.Row, x.Column)
+
+    member private x.ExcelCellAddressText = x.ExcelCellAddress.Address
 
     member x.Address = x.ExcelCellAddress.Address
 
@@ -28,7 +37,7 @@ with
           Column = x.Column + columnOffset }
 
 
-[<DebuggerDisplay("{ExcelAddress}")>]
+[<DebuggerDisplay("{ExcelAddressText}")>]
 type ComparableExcelAddress =
     { StartRow: int 
       EndRow: int
@@ -112,13 +121,21 @@ with
     member x.ExcelAddress =
         ExcelAddress(x.StartRow, x.StartColumn, x.EndRow, x.EndColumn)
     
+    member private x.ExcelAddressText = x.ExcelAddress.Address
+
     member x.Address = x.ExcelAddress.Address
 
     member x.Contains(y: ComparableExcelAddress) = 
-        match x.Start.Column, x.Start.Row, x.End.Column, x.End.Row with 
-        | SmallerOrEqual y.Start.Column, SmallerOrEqual y.Start.Row, BiggerOrEqual y.End.Column, BiggerOrEqual y.End.Row ->
+        match x.StartColumn, x.StartRow, x.EndColumn, x.EndRow with 
+        | SmallerOrEqual y.StartColumn, SmallerOrEqual y.StartRow, BiggerOrEqual y.EndColumn, BiggerOrEqual y.EndRow ->
             true
         | _ -> false
+
+    member x.Contains(y: ComparableExcelCellAddress) = 
+        y.Column.IsBetween(x.StartColumn, x.EndColumn) 
+            &&
+                y.Row.IsBetween(x.StartRow, x.EndRow)
+                
 
     member x.IsIncludedIn(y: ComparableExcelAddress) = y.Contains(x)
 

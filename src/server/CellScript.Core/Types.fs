@@ -11,6 +11,20 @@ open Constrants
 
 [<AutoOpen>]
 module Types = 
+    
+    
+    type ICellValue =
+        abstract member Convertible: IConvertible
+
+
+
+
+    let internal fixRawContent_AllowCellValue (content: obj) =
+        match content with
+        | :? ICellValue as v -> box v
+        | _ -> fixRawContent content
+
+
 
     let private fixTableName (tableName: string) =
         tableName
@@ -31,11 +45,6 @@ module Types =
         member x.Name = x.StringIC.Value
 
         static member Convert(tableName: string) = ValidTableName(tableName).Name
-
-
-    type ICellValue =
-        abstract member Convertible: IConvertible
-    
 
 
 
@@ -74,11 +83,55 @@ module Types =
           SheetName: string }
     
     type RangeGettingOptions =
-        | RangeIndexer of string
+        | RangeIndexerCase of string * includeHided: bool
         /// MaxColumnIndex: cfg(CellScript.Core.UserRangeMaxColumnIndex)
-        | UserRange
-        | UserRange_SkipRows of int
-        | TableName of string
+        | UserRangeCase of includeHided: bool
+        | UserRange_SkipRowsCase of int * includeHided: bool
+        | TableNameCase         of string * includeHided: bool
+        | TableLeftTopCase      of TextSelector * includeHided: bool
+    with 
+        member x.IncludeHided =
+            match x with 
+            | RangeIndexerCase(_, b)
+            | UserRangeCase(b)
+            | UserRange_SkipRowsCase(_, b)
+            | TableNameCase(_, b)
+            | TableLeftTopCase(_, b) -> b
+
+        member x.SetIncludeHided(b) =
+            match x with 
+            | RangeIndexerCase(v, _) -> 
+                (v, b)
+                |> RangeIndexerCase 
+
+            | UserRangeCase(_) -> UserRangeCase(b)
+            | UserRange_SkipRowsCase(v, _) ->
+                (v, b)
+                |> UserRange_SkipRowsCase
+
+            | TableNameCase(v, _) ->
+                (v, b)
+                |> TableNameCase
+
+
+            | TableLeftTopCase(v, _) ->
+                (v, b)
+                |> TableLeftTopCase
+
+        static member UserRange = RangeGettingOptions.UserRangeCase(includeHided = false)
+
+        static member RangeIndexer(indexer, ?includeHided) = 
+            RangeGettingOptions.RangeIndexerCase(indexer, defaultArg includeHided false)
+
+        static member TableName(tableName, ?includeHided) = 
+            RangeGettingOptions.TableNameCase(tableName, defaultArg includeHided false)
+
+        static member TableLeftTop(tableName, ?includeHided) = 
+            RangeGettingOptions.TableLeftTopCase(tableName, defaultArg includeHided false)
+
+        static member UserRange_SkipRows(skipRowsCount, ?includeHided) = 
+            RangeGettingOptions.UserRange_SkipRowsCase(skipRowsCount, defaultArg includeHided false)
+
 
     [<RequireQualifiedAccess>]
     type ColumnAutofitOptions =
@@ -100,6 +153,8 @@ module Types =
     module FormulaText =
         let Create(text: string) =
             sprintf "Formula(%s)" text
+
+
 
     let private (|FormulaText|_|) (text: string) =
         match text with 
@@ -150,43 +205,73 @@ module Types =
 
         member x.Name = x.Value.Name
 
-        member x.GetRange options = 
+        member x.TryGetRange options = 
             let sheet = x.Value
 
             match options with
-            | RangeIndexer indexer ->
+            | RangeIndexerCase (indexer, _) ->
                 sheet.Cells.[indexer] :> ExcelRangeBase
+                |> Result.Ok
 
-            | UserRange ->
+            | UserRangeCase(_) ->
                 let dimension = sheet.FixedDimension
 
                 let indexer = dimension.Start.Address + ":" + dimension.Address
-                sheet.Cells.[indexer]
+                sheet.Cells.[indexer] :> ExcelRangeBase
+                |> Result.Ok
 
-            | UserRange_SkipRows skipRows ->
+            | UserRange_SkipRowsCase(skipRows, _) ->
                 let dimension = sheet.FixedDimension
                 let start = 
                     let start = dimension.Start
                     ExcelCellAddress(start.Row + skipRows, start.Column)
 
                 let indexer = start.Address + ":" + dimension.End.Address
-                sheet.Cells.[indexer]
+                sheet.Cells.[indexer] :> ExcelRangeBase
+                |> Result.Ok
 
-            | TableName tbName ->
+            | TableNameCase(tbName, _) ->
                 let findedTable =
                     x.Value.Tables
                     |> Seq.tryFind(fun m -> StringIC m.Name = StringIC tbName)
 
                 match findedTable with 
-                | Some table -> table.Range
+                | Some table -> table.Range |> Result.Ok
                 | None ->   
                     let allTableNames =
                         x.Value.Tables
                         |> List.ofSeq
                         |> List.map(fun m -> m.Name)
 
-                    TableNameNotFoundException(tbName, allTableNames)
-                    |> raise
+                    (TableNameNotFoundException(tbName, allTableNames) :> System.Exception)
+                    |> Result.Error
+
+            | TableLeftTopCase(expr, _) ->
+                let userRange = x.TryGetRange (RangeGettingOptions.UserRange)
+                userRange
+                |> Result.map(fun userRange ->
+                    let r =
+                        userRange
+                        |> Seq.tryPick(fun range ->
+                            match expr.Predicate range.Text with 
+                            | true ->  
+                                let finedTable = 
+                                    x.Value.Tables
+                                    |> List.ofSeq
+                                    |> List.tryFind(fun tb ->
+                                        tb.Address.Start.Address = range.Start.Address
+                                    )
+                                finedTable
+                            | false -> None
+                        )
+                        
+                    match r with 
+                    | None -> failwithf "Cannot finded table by left top indexer %s" (expr.MethodLiteralText)
+                    | Some r -> r.Range
+                )
+
+
+        member x.GetRange options = x.TryGetRange(options) |> Result.getOrRaise
 
 
         member x.LoadFromArrays(array2D: IConvertible [, ], ?addr, ?includingFormula) =
@@ -434,8 +519,29 @@ module Types =
                             | Some finedHeader ->
                                 let datas = datas.[1.., finedHeader]
                                 let addr2 = addr.Offset(1, columnID, datas.Length-1, 0)
-                                worksheet.Cells.[addr2.Address].LoadFromCollection(datas)
-                                |> ignore
+                                let cells = worksheet.Cells.[addr2.Address]
+                                match cells.Formula with 
+                                | "" ->
+                                    cells.LoadFromCollection(datas)
+                                    |> ignore
+
+                                | _ -> 
+                                    match cells.Columns, cells.Rows with 
+                                    | 1, EqualTo datas.Length ->
+                                        let range0 = worksheet.Cells.[cells.Start.Address]
+                                        datas
+                                        |> Array.iteri(fun i data ->
+                                            match data with 
+                                            | :? string as data ->
+                                                match data with 
+                                                | FormulaText formula ->
+                                                    let range = range0.Offset(i, 0)
+                                                    range.Formula <- formula
+
+                                                | _ -> ()
+                                            | _ -> ()
+                                        )
+                                    | _ -> ()
                         )
 
                         let addOtherColumn =
@@ -483,21 +589,26 @@ module Types =
             match defaultArg includingFormula false with 
             | false -> ()
             | true ->
-                let range = worksheet.Cells.[range.Start.Address]
-                datas
-                |> Array2D.toLists
-                |> List.iteri(fun rowNum row ->
-                    row
-                    |> List.iteri(fun colNum v ->
-                        match v with 
-                        | :? string as v -> 
+                match columnPastingOptions with 
+                | ColumnPastingOptions.Directly ->
+                    let range = worksheet.Cells.[range.Start.Address]
+                    datas
+                    |> Array2D.toLists
+                    |> List.iteri(fun rowNum row ->
+                        row
+                        |> List.iteri(fun colNum v ->
                             match v with 
-                            | FormulaText v -> 
-                                range.Offset(rowNum, colNum).Formula <- v
+                            | :? string as v -> 
+                                match v with 
+                                | FormulaText v -> 
+                                    let offsetedRange = range.Offset(rowNum, colNum)
+                                    offsetedRange.Formula <- v
+                                | _ -> ()
                             | _ -> ()
-                        | _ -> ()
+                        )
                     )
-                )
+
+                | ColumnPastingOptions.ByColumnName -> ()
 
 
             tab.TableStyle <- 
@@ -521,8 +632,6 @@ module Types =
             VisibleExcelWorksheet excelworksheet
 
 
-
-                    
     /// both visible and having contents
     type ValidExcelWorksheet private (visibleExcelWorksheet: VisibleExcelWorksheet) =
 
@@ -534,28 +643,58 @@ module Types =
 
         member x.GetRange rangeGettingOptions = visibleExcelWorksheet.GetRange(rangeGettingOptions)
 
-        member sheet.ReadDatas(rangeGettingOptions) =
+        member sheet.TryReadDatasWithUserState(rangeGettingOptions: RangeGettingOptions, fUserState) =
+            let includeHided = rangeGettingOptions.IncludeHided
             let sheet = sheet.VisibleExcelWorksheet
-            
-            use range = sheet.GetRange(rangeGettingOptions)
+            let mergedCellAddrs = sheet.Value.GetMergeCellAddrs()
+
+
+            let range = sheet.TryGetRange(rangeGettingOptions)
+            range
+            |> Result.map(fun range ->
+                let rowStart = range.Start.Row
+                let rowEnd = range.End.Row
+                let columnStart = range.Start.Column
+                let columnEnd = range.End.Column
     
-            let rowStart = range.Start.Row
-            let rowEnd = range.End.Row
-            let columnStart = range.Start.Column
-            let columnEnd = range.End.Column
+                let content = range.ReadDatasWithUserState_TrackMergeRange(fUserState, includeHided, Some mergedCellAddrs)
     
-            let content = range.ReadDatas()
+                {|
+                    RowStart = rowStart
+                    RowEnd = rowEnd
+                    ColumnStart = columnStart
+                    ColumnEnd = columnEnd
+                    Content = content
+                |}
+            )
+
+
+
+        member sheet.ReadDatasWithUserState(rangeGettingOptions, fUserState) =
+            sheet.TryReadDatasWithUserState(rangeGettingOptions, fUserState)
+            |> Result.getOrFail
+
+        member sheet.TryReadDatas(rangeGettingOptions) =
+            let r = sheet.TryReadDatasWithUserState(rangeGettingOptions, ignore)
+            r
+            |> Result.map(fun r ->
+                {| r with 
+                    Content = 
+                        r.Content
+                        |> Array2D.map(fun m -> m.Content)
+                    
+                |}
+            )
+
+
+        member sheet.ReadDatas(rangeGettingOptions) =
+            let r = sheet.ReadDatasWithUserState(rangeGettingOptions, ignore)
+            {| r with 
+                Content = 
+                    r.Content
+                    |> Array2D.map(fun m -> m.Content)
                 
-    
-            {|
-                RowStart = rowStart
-                RowEnd = rowEnd
-                ColumnStart = columnStart
-                ColumnEnd = columnEnd
-                Content = content
             |}
-
-
 
         static member TryCreate(visibleExcelWorksheet: VisibleExcelWorksheet) =
             match visibleExcelWorksheet.Value.Dimension with
@@ -619,8 +758,18 @@ module Types =
 
                 | SheetGettingOptions.SheetIndex index -> excelPackage.GetVisibleSheetByIndex index
                 | SheetGettingOptions.SheetNameOrSheetIndex (sheetName, index) ->
-                    match Seq.tryFind (fun (worksheet: ExcelWorksheet) -> StringIC worksheet.Name = sheetName && worksheet.Hidden = eWorkSheetHidden.Visible) excelPackage.Workbook.Worksheets with 
-                    | Some worksheet -> worksheet
+                    let worksheets = excelPackage.Workbook.Worksheets
+                    match Seq.tryFind (fun (worksheet: ExcelWorksheet) -> StringIC worksheet.Name = sheetName && worksheet.Hidden = eWorkSheetHidden.Visible) worksheets with 
+                    | Some worksheet -> 
+                        let sheet_byName = worksheet
+                        match sheet_byName.View.TabSelected with 
+                        | true -> sheet_byName
+                        | false -> 
+                            let sheet_byIndex = excelPackage.GetVisibleSheetByIndex index
+                            match sheet_byIndex.View.TabSelected with 
+                            | true -> sheet_byIndex
+                            | false -> sheet_byName
+
                     | None -> excelPackage.GetVisibleSheetByIndex index
 
   
@@ -630,8 +779,11 @@ module Types =
         member excelPackage.TryGetValidWorksheet (options) =
 
             let r = 
-                excelPackage.GetVisibleWorksheet(options)
-                |> ValidExcelWorksheet.TryCreate
+                try
+                    excelPackage.GetVisibleWorksheet(options)
+                    |> ValidExcelWorksheet.TryCreate
+                with ex ->
+                    Result.Error (ex.Message)
 
             match r with 
             | Result.Ok r -> Result.Ok r

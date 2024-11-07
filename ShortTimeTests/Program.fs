@@ -12,6 +12,7 @@ open Akka.Util
 open Akkling
 open Newtonsoft.Json
 open OfficeOpenXml
+open OfficeOpenXml.Drawing
 open Shrimp.FSharp.Plus.Operators
 open FParsec
 open FParsec.CharParsers
@@ -45,20 +46,17 @@ with
 
 [<EntryPoint>]
 let main argv =
-    let template = 
-        @"\\2021-pc\JobData\2023年-管家婆\模板\错误修复模板.xlsx"
+    let xlsxFile = 
+        @"D:\Users\Jia\Documents\MyData\Docs\2017\健耐\JDW\包装\24-10-22\UKD 503装箱单.xlsx"
         |> XlsxFile
+
 
     let values = 
-        @"\\2021-pc\2023-已完成出CTP文件2\自动打印\资料\中达产品资料.xlsx"
-        |> XlsxFile
-        |> Table.OfXlsxFile 
-        |> Table.mapFrame (Frame.filterCols(fun col _ ->
-            match col.Value with 
-            | "零售价" -> false
-            | _ -> true
-        ))
+        Table.OfXlsxFile(
+            xlsxFile
+        )
 
+    let datas = values.ToArray2D()
     let addressedArray = 
         { AddressedArray.ofTable "A1" (values) with 
             SpecificName = Some "产品资料"
@@ -74,6 +72,10 @@ let main argv =
     let targetXlsxPath =
         @"C:\Users\Administrator\Desktop\中达产品结果.xlsx"
         |> XlsxPath
+
+    let template = 
+        @"\\2021-pc\JobData\2023年-管家婆\模板\错误修复模板.xlsx"
+        |> XlsxFile
 
     named.SaveToXlsx_FromTemplate(template, targetXlsxPath)
 

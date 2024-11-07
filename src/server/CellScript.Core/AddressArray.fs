@@ -106,6 +106,13 @@ with
           AddressKind = AddressKind.Exactly
         }
 
+        
+    static member ofArray2D address (array: ConvertibleUnion [,]) =
+        { Address = ComparableExcelCellAddress.OfAddress address 
+          Array = array
+          SpecificName = None  
+          AddressKind = AddressKind.Exactly }
+        
     /// As Table
     static member ofTitledArray2D address (title: string list, array: ConvertibleUnion [,]) =
         let __ensureNotTitleDuplicated =
@@ -252,6 +259,7 @@ module _Address_Extensions =
               AddressKind = AddressKind.Exactly }
 
 
+
         //member x.ReadToAddressedArrays(addresses: ComparableExcelCellAddress list) =
         //    addresses
         //    |> List.map(x.ReadToAddressedArray)
@@ -259,8 +267,8 @@ module _Address_Extensions =
         //    |> Map.ofList
         //    |> AddressedArrays
 
-        member x.ReadToAddressedArray(address: string) =
-            x.ReadToAddressedArray(ComparableExcelCellAddress.OfAddress address)
+        member x.ReadToAddressedArray(cellAddress: string) =
+            x.ReadToAddressedArray(ComparableExcelCellAddress.OfAddress cellAddress)
 
         member x.ReadToObsevations(address: ComparableExcelCellAddress) =
             x.ReadToAddressedArray(address).Array
@@ -268,8 +276,8 @@ module _Address_Extensions =
             |> List.map(fun m -> m.[0].Text => m.[1])
             |> Observations.Create
 
-        member x.ReadToObsevations(address: string) =
-            x.ReadToAddressedArray(address).Array
+        member x.ReadToObsevations(cellAddress: string) =
+            x.ReadToAddressedArray(cellAddress).Array
             |> Array2D.toLists
             |> List.map(fun m -> m.[0].Text => m.[1])
             |> Observations.Create
@@ -316,7 +324,11 @@ module _Address_Extensions =
                                     tableNames
 
                             | Some table ->
-                                let row = table.Address.End.Row + distance
+                                let row = 
+                                    match distance with 
+                                    | BiggerThan 0 -> table.Address.End.Row + distance
+                                    | _ -> table.Address.Start.Row + distance
+
                                 let column = addressedArray.Address.Column
                                 { Row = row; Column = column }.Address
 
@@ -450,3 +462,6 @@ module _Address_Extensions =
                   AddressedArrays = x }
             
             namedAddressedArray.SaveToXlsx_FromTemplate(template, xlsxPath, ?columnPastingOptions = columnPastingOptions)
+
+
+    

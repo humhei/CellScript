@@ -155,6 +155,25 @@ module __ITableColumnKeyExtensions =
             )
             |> observations
 
+
+        [<Extension>]
+        static member ObservationsAllEx(row: Series<StringIC, obj>) =
+            row.ObservationsAll
+            |> List.ofSeq
+            |> List.map(fun pair ->
+                let value =
+                    match OptionalValue.asOption pair.Value with 
+                    | Some convertible ->
+                        match convertible with
+                        | :? IConvertible as convertible -> convertible |> ConvertibleUnion.Convert
+                        | :? ICellValue as v -> v.Convertible |> ConvertibleUnion.Convert
+                        | _ -> failwithf "type of cell value %A should either be ITableCellValue or IConvertible" (convertible.GetType())
+                    | None -> ConvertibleUnion.Missing
+
+                observation(pair.Key, value)
+            )
+            |> observations
+
         [<Extension>]
         static member ObservationsAllEx(row: ObjectSeries<StringIC>) =
             row.ObservationsAll
@@ -671,14 +690,23 @@ with
                 | null -> 
                     (sprintf "%s%d" CELL_SCRIPT_COLUMN i)
                 | _ -> 
-                    headers.[0 .. i - 1]
-                    |> List.filter(fun preHeader -> preHeader = header)
-                    |> function
-                        | matchHeaders when matchHeaders.Length > 0 ->
-                            let headerText = header.ToString()
-                            sprintf "%s%d" headerText (matchHeaders.Length + 1) 
-                        | [] -> header.ToString()
-                        | _ -> failwith "invalid token"
+                    let isEmptyText = 
+                        match header with 
+                        | :? string as v -> v.Trim() = ""
+                        | _ -> false
+
+                    match isEmptyText with 
+                    | true -> (sprintf "%s%d" CELL_SCRIPT_COLUMN i)
+                    | false -> 
+
+                        headers.[0 .. i - 1]
+                        |> List.filter(fun preHeader -> preHeader = header)
+                        |> function
+                            | matchHeaders when matchHeaders.Length > 0 ->
+                                let headerText = header.ToString()
+                                sprintf "%s%d" headerText (matchHeaders.Length + 1) 
+                            | [] -> header.ToString()
+                            | _ -> failwith "invalid token"
             )
             |> List.map StringIC
     

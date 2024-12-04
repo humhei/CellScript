@@ -81,20 +81,29 @@ module Types =
     type SheetReference =
         { WorkbookPath: string 
           SheetName: string }
+
+    type DimensionEnum =
+        | FixedDimension = 0
+        /// ///<summary>
+        ///            Dimension address for the worksheet for cells with a value different than null. 
+        ///            Top left cell to Bottom right.
+        ///            If the worksheet has no cells, null is returned        
+        ///            </summary>
+        | DimensionByValue = 1
     
     type RangeGettingOptions =
         | RangeIndexerCase of string * includeHided: bool
         /// MaxColumnIndex: cfg(CellScript.Core.UserRangeMaxColumnIndex)
-        | UserRangeCase of includeHided: bool
-        | UserRange_SkipRowsCase of int * includeHided: bool
+        | UserRangeCase of includeHided: bool * dimension: DimensionEnum
+        | UserRange_SkipRowsCase of int * includeHided: bool * dimension: DimensionEnum
         | TableNameCase         of string * includeHided: bool
         | TableLeftTopCase      of TextSelector * includeHided: bool
     with 
         member x.IncludeHided =
             match x with 
             | RangeIndexerCase(_, b)
-            | UserRangeCase(b)
-            | UserRange_SkipRowsCase(_, b)
+            | UserRangeCase(b, _)
+            | UserRange_SkipRowsCase(_, b, _)
             | TableNameCase(_, b)
             | TableLeftTopCase(_, b) -> b
 
@@ -104,9 +113,9 @@ module Types =
                 (v, b)
                 |> RangeIndexerCase 
 
-            | UserRangeCase(_) -> UserRangeCase(b)
-            | UserRange_SkipRowsCase(v, _) ->
-                (v, b)
+            | UserRangeCase(_, removeEndingEmptys) -> UserRangeCase(b, removeEndingEmptys)
+            | UserRange_SkipRowsCase(v, _, removeEndingEmptys) ->
+                (v, b, removeEndingEmptys)
                 |> UserRange_SkipRowsCase
 
             | TableNameCase(v, _) ->
@@ -118,7 +127,11 @@ module Types =
                 (v, b)
                 |> TableLeftTopCase
 
-        static member UserRange = RangeGettingOptions.UserRangeCase(includeHided = false)
+        static member UserRange = 
+            RangeGettingOptions.UserRangeCase(
+                includeHided = false,
+                dimension = DimensionEnum.DimensionByValue
+            )
 
         static member RangeIndexer(indexer, ?includeHided) = 
             RangeGettingOptions.RangeIndexerCase(indexer, defaultArg includeHided false)
@@ -129,8 +142,12 @@ module Types =
         static member TableLeftTop(tableName, ?includeHided) = 
             RangeGettingOptions.TableLeftTopCase(tableName, defaultArg includeHided false)
 
-        static member UserRange_SkipRows(skipRowsCount, ?includeHided) = 
-            RangeGettingOptions.UserRange_SkipRowsCase(skipRowsCount, defaultArg includeHided false)
+        static member UserRange_SkipRows(skipRowsCount, ?includeHided, ?removeEndingEmptys) = 
+            RangeGettingOptions.UserRange_SkipRowsCase(
+                skipRowsCount,
+                defaultArg includeHided false,
+                DimensionEnum.DimensionByValue
+            )
 
 
     [<RequireQualifiedAccess>]
@@ -176,11 +193,12 @@ module Types =
 
     type ExcelWorksheet with 
         member sheet.FixedDimension =
+            let dimension = sheet.Dimension
             let ending = 
-                let addr = sheet.Dimension.End
+                let addr = dimension.End
                 ExcelCellAddress(addr.Row, min userRange_maxColumnWidth.Value addr.Column)
 
-            let start = sheet.Dimension.Start
+            let start = dimension.Start
 
             ExcelAddress(
                 start.Row,
@@ -188,6 +206,25 @@ module Types =
                 ending.Row,
                 ending.Column
             )
+
+        member x.GetDimensionByEnum(dimensionEnum: DimensionEnum) =
+            match dimensionEnum with 
+            | DimensionEnum.FixedDimension -> x.FixedDimension
+            | DimensionEnum.DimensionByValue -> x.FixedDimension
+                //let dimension = x.DimensionByValue
+                //let ending = 
+                //    let addr = dimension.End
+                //    ExcelCellAddress(addr.Row, min userRange_maxColumnWidth.Value addr.Column)
+
+                //let start = dimension.Start
+
+                //ExcelAddress(
+                //    start.Row,
+                //    start.Column,
+                //    ending.Row,
+                //    ending.Column
+                //)
+                
 
     type TableNameNotFoundException(tableName, allTableNames: string list) =
         inherit Exception(sprintf "Cannot found any table named %s, avaliable tables are %A" tableName allTableNames)
@@ -213,15 +250,18 @@ module Types =
                 sheet.Cells.[indexer] :> ExcelRangeBase
                 |> Result.Ok
 
-            | UserRangeCase(_) ->
-                let dimension = sheet.FixedDimension
+            | UserRangeCase(_, dimension) ->
+                let dimension = 
+                    sheet.GetDimensionByEnum(dimension)
 
                 let indexer = dimension.Start.Address + ":" + dimension.Address
                 sheet.Cells.[indexer] :> ExcelRangeBase
                 |> Result.Ok
 
-            | UserRange_SkipRowsCase(skipRows, _) ->
-                let dimension = sheet.FixedDimension
+            | UserRange_SkipRowsCase(skipRows, _, dimension) ->
+                let dimension = 
+                    sheet.GetDimensionByEnum(dimension)
+
                 let start = 
                     let start = dimension.Start
                     ExcelCellAddress(start.Row + skipRows, start.Column)
@@ -658,7 +698,50 @@ module Types =
                 let columnEnd = range.End.Column
     
                 let content = range.ReadDatasWithUserState_TrackMergeRange(fUserState, includeHided, Some mergedCellAddrs)
-    
+                let content, reducedNums = 
+                    match rangeGettingOptions with 
+                    | RangeGettingOptions.UserRangeCase(_, dimension) 
+                    | RangeGettingOptions.UserRange_SkipRowsCase(_, _, dimension) ->
+                        match dimension with 
+                        | DimensionEnum.FixedDimension -> content, None
+                        | DimensionEnum.DimensionByValue ->
+                            let l1 = Array2D.length1 content
+                            let l2 = Array2D.length2 content
+                            let l2_down = 
+                                [0..l2-1]
+                                |> List.rev
+                                |> List.takeWhile(fun l2 ->
+                                    [0..l1-1]
+                                    |> List.forall(fun l1 ->
+                                        content.[l1, l2].Content.IsStringEmpty
+                                    )
+                                )
+                                |> List.tryLast
+                                |> Option.defaultValue (l2-1)
+
+                            let l1_down = 
+                                [0..l1-1]
+                                |> List.rev
+                                |> List.takeWhile(fun l1 ->
+                                    [0..l2-1]
+                                    |> List.forall(fun l2 ->
+                                        content.[l1, l2].Content.IsStringEmpty
+                                    )
+                                )
+                                |> List.tryLast
+                                |> Option.defaultValue (l1-1)
+
+                            let newContent = content.[0..l1_down, 0..l2_down]
+                            newContent, Some (l1-1-l1_down, l2-1-l2_down)
+
+                    | _ -> content, None
+
+                let rowEnd, columnEnd = 
+                    match reducedNums with 
+                    | None -> rowEnd, columnEnd
+                    | Some (reducedRow, reducedCol) ->
+                        rowEnd - reducedRow, columnEnd - reducedCol
+
                 {|
                     RowStart = rowStart
                     RowEnd = rowEnd

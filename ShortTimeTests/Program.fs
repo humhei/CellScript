@@ -47,7 +47,7 @@ with
 [<EntryPoint>]
 let main argv =
     let xlsxFile = 
-        @"D:\Users\Jia\Documents\MyData\Docs\2017\健耐\JDW\包装\24-10-22\UKD 503装箱单.xlsx"
+        @"D:\Users\Jia\Documents\MyData\Docs\2017\安泰\MAUI_SONS\包装\24-11-15\订单\.cache\秘鲁条码-安泰 .shp.raw.xlsx"
         |> XlsxFile
 
 

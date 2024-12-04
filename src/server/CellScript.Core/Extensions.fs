@@ -191,6 +191,7 @@ module Extensions =
             |> array2D
 
 
+
     let lists_ForceSameLength emptyValue (rowLists: list<list<'a>>) =
         let maxLength = 
             rowLists
@@ -208,7 +209,54 @@ module Extensions =
         )
 
 
+    let lists_ForceSameLength_fillEmptyHeadersWithNumber emptyValue (rowLists: list<list<string>>) =
+        match lists_ForceSameLength emptyValue rowLists with 
+        | [] -> []
+        | headers :: contents ->
+            let headers =
+                let mutable i = 
+                    headers
+                    |> List.choose(Int32.tryParse)
+                    |> function
+                        | [] -> 0
+                        | vs -> List.max vs
 
+                headers
+                |> List.map(fun header ->
+                    match header.Trim() with 
+                    | "" -> 
+                        i <- i + 1
+                        i.ToString()
+                    | _ -> header
+                )
+
+            headers :: contents
+
+    let lists_ForceSameLength_fillEmptyHeadersWith_UnderLines emptyValue (rowLists: list<list<string>>) =
+        match lists_ForceSameLength emptyValue rowLists with 
+        | [] -> []
+        | headers :: contents ->
+            let headers =
+                let mutable i = 
+                    headers
+                    |> List.choose(Int32.tryParse)
+                    |> function
+                        | [] -> 0
+                        | vs -> List.max vs
+
+                headers
+                |> List.map(fun header ->
+                    match header.Trim() with 
+                    | "" -> 
+                        i <- i + 1
+
+                        List.replicate i "_"
+                        |> String.concat ""
+
+                    | _ -> header
+                )
+
+            headers :: contents
 
 
     [<RequireQualifiedAccess>]

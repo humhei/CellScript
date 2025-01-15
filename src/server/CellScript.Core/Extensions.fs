@@ -167,26 +167,34 @@ module Extensions =
             }
             |> array2D
 
-        let concat__addSuffixEmptyColumnsToForceSameColumnLength emptyValue (rowLists: list<'a [,]>) =
+        let concat__addSuffixEmptyColumnsToForceSameColumnLength emptyValue (space: int) (rowLists: list<'a [,]>) =
             let maxLength = 
                 rowLists
                 |> List.map Array2D.length2
                 |> List.max
 
-            rowLists
-            |> List.collect(fun rows ->
-                let columnLength = Array2D.length2 rows
-                match columnLength = maxLength with 
-                | true -> toLists rows
-                | false ->
-                    let rows = toLists rows
-                    let substract = maxLength - columnLength
-                    rows
-                    |> List.map(fun row -> 
-                        row @ List.replicate substract emptyValue
-                    )
-            )
+            let emptyRow = List.replicate maxLength emptyValue
+            let spacedRows = List.replicate space emptyRow 
 
+            rowLists
+            |> List.indexed
+            |> List.collect(fun (i, rows) ->
+                let columnLength = Array2D.length2 rows
+                let rows = 
+                    match columnLength = maxLength with 
+                    | true -> toLists rows
+                    | false ->
+                        let rows = toLists rows
+                        let substract = maxLength - columnLength
+                        rows
+                        |> List.map(fun row -> 
+                            row @ List.replicate substract emptyValue
+                        )
+
+                match i = rowLists.Length - 1 with 
+                | false -> rows @ spacedRows
+                | true -> rows 
+            )
 
             |> array2D
 

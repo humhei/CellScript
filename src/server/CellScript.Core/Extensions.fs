@@ -88,6 +88,13 @@ module private _Utils =
 
 [<RequireQualifiedAccess>]
 module CellText =
+    let parseToDateTime(m: obj) =
+        match m with 
+        | :? double as convertible -> System.DateTime.FromOADate convertible 
+        | :? DateTime as v -> v
+        | :? string as v -> System.DateTime.Parse v
+        | v -> failwithf "Cannot parse %A to datetime" (v.GetType(), v.ToString())
+
     let getAsODBCNumber(m: string) =
         match m with 
         | String.StartsWith "0" -> 

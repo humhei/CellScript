@@ -89,11 +89,8 @@ module __ITableColumnKeyExtensions =
 
         [<Extension>]
         static member GetAsDateTime(row: ObjectSeries<StringIC>, key: StringIC) =
-            match row.GetAs<obj>(key) with 
-            | :? double as convertible -> System.DateTime.FromOADate convertible 
-            | :? DateTime as v -> v
-            | :? string as v -> System.DateTime.Parse v
-            | v -> failwithf "Cannot parse %A to datetime" (v.GetType(), v.ToString())
+            row.GetAs<obj>(key)
+            |> CellText.parseToDateTime
 
 
         [<Extension>]

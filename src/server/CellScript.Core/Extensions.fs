@@ -144,7 +144,80 @@ module Constrants =
 
 module Extensions =
 
-    
+    [<AutoOpenAttribute>]
+    module _Frame_FillEmptyUp =
+        [<RequireQualifiedAccess>]
+        module Frame =
+            [<RequireQualifiedAccess>]
+            module Column =
+                let fillEmptyUp (column: ObjectSeries<_>) =
+                    let values: list<obj option> = 
+                        let values = 
+                            column.GetAllValues()
+                            |> List.ofSeq
+
+                        values
+                        |> List.map OptionalValue.asOption
+                        |> List.map(fun m ->
+                            match m with 
+                            | Some (v) ->
+                                match v with 
+                                | :? string as text -> 
+                                    match text.Trim() with 
+                                    | "" -> None
+                                    | _ -> Some text
+
+                                | _ -> Some v
+                            | None -> None
+                        )
+
+                    let rec loop values accum accumValues =
+                        match values with 
+                        | h :: t ->
+                            match h with 
+                            | Some v -> loop t (Some v) (v :: accumValues)
+                            | None -> 
+                                match accum with 
+                                | Some accum ->
+                                    loop t (Some accum) (accum :: accumValues)
+                                | None -> 
+                                    match h with 
+                                    | Some h ->
+                                        loop t None (h :: accumValues)
+                                    | None -> loop t None (null :: accumValues)
+
+                        | [] -> accumValues
+
+                    let newValues = 
+                        loop values None []
+                        |> List.rev
+
+                    let series = 
+                        newValues
+                        |> Series.ofValues
+
+                    series
+                    |> Series.indexWith (column.Keys)
+
+
+            let fillEmptyUpForColumns (columnKeys: _ list) frame =
+                Frame.mapCols (fun colKey (column: ObjectSeries<_>) ->
+                    match List.contains colKey columnKeys with 
+                    | true ->
+                        Column.fillEmptyUp column
+
+                    | false ->
+                        column :> Series<_, _>
+
+                    ) frame
+
+
+
+
+            let fillEmptyUp frame =
+                Frame.mapColValues (fun (column: ObjectSeries<_>) ->
+                    Column.fillEmptyUp column
+                ) frame
 
     [<RequireQualifiedAccess>]
     module Array2D =
@@ -382,95 +455,7 @@ module Extensions =
                 (chooser colKey).Value
             )
 
-        let internal fillEmptyUpForColumns (columnKeys: _ list) frame =
-            Frame.mapCols (fun colKey (column: ObjectSeries<_>) ->
-                match List.contains colKey columnKeys with 
-                | true ->
-                    let values: list<obj option> = 
-                        column.GetAllValues()
-                        |> List.ofSeq
-                        |> List.map OptionalValue.asOption
 
-                    let rec loop accum accumValues values =
-                        match values with 
-                        | h :: t ->
-                            match h with 
-                            | Some v -> loop  (Some v) (v :: accumValues) t
-                            | None -> 
-                                match accum with 
-                                | Some accum ->
-                                    loop  (Some accum) (accum :: accumValues) t
-                                | None -> 
-                                    match h with 
-                                    | Some h ->
-                                        loop  None (h :: accumValues) t
-                                    | None -> loop  None (null :: accumValues) t
-
-                        | [] -> accumValues
-
-                    let r =  loop None [] values
-                    r
-                    |> List.rev
-                    |> Series.ofValues
-                    |> Series.indexWith (column.Keys)
-
-                | false ->
-                    column :> Series<_, _>
-
-                ) frame
-
-
-        let internal fillEmptyUp frame =
-            Frame.mapColValues (fun (column: ObjectSeries<_>) ->
-                let values: list<obj option> = 
-                    let values = 
-                        column.GetAllValues()
-                        |> List.ofSeq
-
-                    values
-                    |> List.map OptionalValue.asOption
-                    |> List.map(fun m ->
-                        match m with 
-                        | Some (v) ->
-                            match v with 
-                            | :? string as text -> 
-                                match text.Trim() with 
-                                | "" -> None
-                                | _ -> Some text
-
-                            | _ -> Some v
-                        | None -> None
-                    )
-
-                let rec loop values accum accumValues =
-                    match values with 
-                    | h :: t ->
-                        match h with 
-                        | Some v -> loop t (Some v) (v :: accumValues)
-                        | None -> 
-                            match accum with 
-                            | Some accum ->
-                                loop t (Some accum) (accum :: accumValues)
-                            | None -> 
-                                match h with 
-                                | Some h ->
-                                    loop t None (h :: accumValues)
-                                | None -> loop t None (null :: accumValues)
-
-                    | [] -> accumValues
-
-                let newValues = 
-                    loop values None []
-                    |> List.rev
-
-                let series = 
-                    newValues
-                    |> Series.ofValues
-
-                series
-                |> Series.indexWith (column.Keys)
-
-                ) frame
 
 
         let internal splitRowToMany addtionalHeaders (mapping : 'R -> ObjectSeries<_> -> seq<seq<obj>>)  (frame: Frame<'R,'C>) =
@@ -496,14 +481,18 @@ module Extensions =
     with 
         member x.AsList = x.Addresses
 
-        static member Create(mergedCells: ExcelWorksheet.MergeCellsCollection) =
+        static member TryCreate(mergedCells: ExcelWorksheet.MergeCellsCollection) =
             let addresses = 
                 mergedCells
                 |> List.ofSeq
                 |> List.map(fun m -> ComparableExcelAddress.OfAddress m)
             
-            { Addresses = addresses
-              HiddenCache = ConcurrentDictionary() }
+            match addresses with 
+            | [] -> None
+            | _ ->
+                { Addresses = addresses
+                  HiddenCache = ConcurrentDictionary() }
+                |> Some
 
         member x.TryGetMergedOf(sheet: ExcelWorksheet, addr: ComparableExcelCellAddress) =
             let addr = 
@@ -536,9 +525,9 @@ module Extensions =
 
 
     type ExcelWorksheet with 
-        member internal x.GetMergeCellAddrs() =
+        member internal x.TryGetMergeCellAddrs() =
             x.MergedCells
-            |> MergeCellAddrs.Create
+            |> MergeCellAddrs.TryCreate
 
 
     type ExcelRangeBase with

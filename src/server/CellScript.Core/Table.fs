@@ -275,7 +275,9 @@ type private HeadOrEnd =
     | Head = 0
     | End = 1
 
-
+type internal XLColumn =
+    { Header: IConvertible 
+      Contents: IConvertible list }
 
 type Table = private Table of ExcelFrame<StringIC>
 with 
@@ -505,6 +507,28 @@ with
     member private x.FormatText = 
         x.AsFrame.FillMissing("").Format(50)
     
+    member internal x.Array2DValue = x.ToArray2D()
+
+    member internal x.XLColumnValues = 
+        let array2D = 
+            x.ToArray2D()
+            |> Array2D.transpose
+
+        array2D
+        |> Array2D.toLists
+        |> List.map(fun datas ->
+            { Header = datas.Head 
+              Contents = datas.Tail }
+        )
+
+    member internal x.XLRowValues = 
+        let array2D = 
+            x.ToArray2D()
+
+        array2D
+        |> Array2D.toLists
+ 
+
     /// without header
     member x.ToExcelArray(?withHeader) =
         
@@ -1005,8 +1029,9 @@ module Table =
         )
         |> ExcelArray
 
+    /// no allow subsets
     /// Frame.indexRowsOrdinally
-    let concat_RefreshRowKeys (tables: AtLeastOneList<Table>) =
+    let private concat_RefreshRowKeys_raw (tables: AtLeastOneList<Table>) =
         tables.Head
         |> mapFrame(fun _ ->
             tables
@@ -1049,8 +1074,38 @@ module Table =
                     tb.AddColumns_SingtonValue(diff, "")
             )
 
-        concat_RefreshRowKeys newTables
+        concat_RefreshRowKeys_raw newTables
 
+    /// allow header subsets
+    let concat_RefreshRowKeys (tables: AtLeastOneList<Table>) =
+        match tables with 
+        | AtLeastOneList.One table -> table
+        | AtLeastOneList.Many tables ->
+            let headerLists =
+                tables.AsList
+                |> List.map (fun m ->
+                    m.Headers
+                    |> Set.ofSeq
+                )
+
+            headerLists
+            |> List.sortBy(fun m -> m.Count)
+            |> List.iter(fun m ->
+                let headers_length_biggerThan_this =
+                    headerLists
+                    |> List.filter(fun m2 -> m2.Count >= m.Count)
+
+                headers_length_biggerThan_this
+                |> List.iter(fun (headers_length_biggerThan_this) ->
+                    match m.IsSubsetOf headers_length_biggerThan_this with 
+                    | true -> ()
+                    | false -> 
+                        failwithf "headers1 %A <> headers2 %A when concating table" (Set.toList m) (Set.toList headers_length_biggerThan_this)
+                )
+            )
+
+            concat_RefreshRowKeys_ForceSameHeaders tables.AsAtLeastOneList
+            
 
     [<System.Obsolete("This method is obsolted, using concat_RefreshRowKeys instead")>]
     let concat_RemoveRowKeys (tables: AtLeastOneList<Table>) =
@@ -1065,7 +1120,7 @@ module Table =
         |> List.map(fun (_, tables) ->
             tables
             |> AtLeastOneList.Create
-            |> concat_RefreshRowKeys
+            |> concat_RefreshRowKeys_raw
         )
         |> AtLeastOneList.Create
         |> Tables

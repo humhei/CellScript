@@ -117,7 +117,6 @@ with
         }
 
 
-
     member x.ExcelAddress =
         ExcelAddress(x.StartRow, x.StartColumn, x.EndRow, x.EndColumn)
     
@@ -139,6 +138,32 @@ with
 
     member x.IsIncludedIn(y: ComparableExcelAddress) = y.Contains(x)
 
+    static member Concat(addrs: al1List<ComparableExcelAddress>) =
+        let startRow = 
+            addrs.AsList
+            |> List.map(fun m -> m.StartRow)
+            |> List.min
+
+        let startColumn = 
+            addrs.AsList
+            |> List.map(fun m -> m.StartColumn)
+            |> List.min
+
+        let endRow = 
+            addrs.AsList
+            |> List.map(fun m -> m.EndRow)
+            |> List.max
+
+        let endColumn = 
+            addrs.AsList
+            |> List.map(fun m -> m.EndColumn)
+            |> List.max
+
+
+        { StartRow    = startRow 
+          EndRow      = endRow
+          StartColumn = startColumn 
+          EndColumn   = endColumn }
 
 type ComparableExcelCellAddress with 
     member x.RangeTo(y: ComparableExcelCellAddress) =

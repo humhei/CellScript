@@ -686,7 +686,7 @@ module Types =
         member sheet.TryReadDatasWithUserState(rangeGettingOptions: RangeGettingOptions, fUserState) =
             let includeHided = rangeGettingOptions.IncludeHided
             let sheet = sheet.VisibleExcelWorksheet
-            let mergedCellAddrs = sheet.Value.GetMergeCellAddrs()
+            let mergedCellAddrs = sheet.Value.TryGetMergeCellAddrs()
 
 
             let range = sheet.TryGetRange(rangeGettingOptions)
@@ -697,7 +697,7 @@ module Types =
                 let columnStart = range.Start.Column
                 let columnEnd = range.End.Column
     
-                let content = range.ReadDatasWithUserState_TrackMergeRange(fUserState, includeHided, Some mergedCellAddrs)
+                let content = range.ReadDatasWithUserState_TrackMergeRange(fUserState, includeHided, mergedCellAddrs)
                 let content, reducedNums = 
                     match rangeGettingOptions with 
                     | RangeGettingOptions.UserRangeCase(_, dimension) 

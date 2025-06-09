@@ -68,7 +68,17 @@ module private _Utils =
                 v 
 
             | String.TrimStartIC "General" ending -> 
-                let ending = ending.Trim('\"')
+                //match ending with 
+                //| "" -> fixRawContent content.Value
+                //| _ -> 
+                //    match content.Value with 
+                //    | null -> null
+                //    | :? ExcelErrorValue -> null
+                //    | :? DBNull -> null
+                //    | _ -> fixRawContent (content.Text)
+                  
+
+                let ending = ending.Trim('\"').TrimEnding("_)")
                 match ending with 
                 | "" -> fixRawContent content.Value
                 | ending ->
@@ -604,10 +614,40 @@ module Extensions =
                                             |> ConvertibleUnion.Convert
 
                                         UserState = fUserState currentRange
+                                        CurrentRange = currentRange
                                     |}
                                 )
                             ]
                     ] 
+
+            let content = 
+                match includeHided with 
+                | true -> content
+                | false ->
+                    let rows = 
+                        Array2D.toLists content
+                        
+                    let row1 = rows.[0]
+                    let colIndexes_hided =
+                        row1
+                        |> List.indexed
+                        |> List.filter(fun (i, m) ->
+                            m.CurrentRange.EntireColumn.Hidden
+                        )
+                        |> List.map fst
+
+                    let rows =
+                        rows
+                        |> List.map(fun row ->
+                            row
+                            |> List.indexed
+                            |> List.filter(fun (i, _) ->
+                                not(List.contains i colIndexes_hided)
+                            )
+                            |> List.map snd
+                        )
+
+                    array2D rows
 
             content
 

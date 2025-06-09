@@ -527,7 +527,7 @@ with
 
         array2D
         |> Array2D.toLists
- 
+    
 
     /// without header
     member x.ToExcelArray(?withHeader) =
@@ -844,6 +844,12 @@ with
 
     static member OfCsvFile(csvFile: CsvFile) =
         Frame.ReadCsv(csvFile.Path)
+        |> Frame.mapColKeys StringIC
+        |> ExcelFrame
+        |> Table
+
+    static member OfCsvFile_TXT(txtFile: TxtFile) =
+        Frame.ReadCsv(txtFile.Path)
         |> Frame.mapColKeys StringIC
         |> ExcelFrame
         |> Table

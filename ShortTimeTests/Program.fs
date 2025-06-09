@@ -47,9 +47,8 @@ with
 [<EntryPoint>]
 let main argv =
     let xlsxFile = 
-        @"D:\Users\Jia\Documents\MyData\Docs\2017\安泰\MAUI_SONS\包装\24-11-15\订单\.cache\秘鲁条码-安泰 .shp.raw.xlsx"
+        @"datas/25APSKB027  包装资料  匡贝.xlsx"
         |> XlsxFile
-
 
     let values = 
         Table.OfXlsxFile(

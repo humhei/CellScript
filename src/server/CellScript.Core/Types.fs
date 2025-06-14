@@ -97,6 +97,7 @@ module Types =
         | UserRangeCase of includeHided: bool * dimension: DimensionEnum
         | UserRange_SkipRowsCase of int * includeHided: bool * dimension: DimensionEnum
         | TableNameCase         of string * includeHided: bool
+        | TableNameExprCase         of TextSelector * includeHided: bool
         | TableLeftTopCase      of TextSelector * includeHided: bool
     with 
         member x.IncludeHided =
@@ -105,6 +106,7 @@ module Types =
             | UserRangeCase(b, _)
             | UserRange_SkipRowsCase(_, b, _)
             | TableNameCase(_, b)
+            | TableNameExprCase(_, b)
             | TableLeftTopCase(_, b) -> b
 
         member x.SetIncludeHided(b) =
@@ -123,6 +125,11 @@ module Types =
                 |> TableNameCase
 
 
+            | TableNameExprCase(v, _) ->
+                (v, b)
+                |> TableNameExprCase
+
+
             | TableLeftTopCase(v, _) ->
                 (v, b)
                 |> TableLeftTopCase
@@ -138,6 +145,9 @@ module Types =
 
         static member TableName(tableName, ?includeHided) = 
             RangeGettingOptions.TableNameCase(tableName, defaultArg includeHided false)
+
+        static member TableNameExpr(tableNameTextSelector, ?includeHided) = 
+            RangeGettingOptions.TableNameExprCase(tableNameTextSelector, defaultArg includeHided false)
 
         static member TableLeftTop(tableName, ?includeHided) = 
             RangeGettingOptions.TableLeftTopCase(tableName, defaultArg includeHided false)
@@ -284,6 +294,25 @@ module Types =
                         |> List.map(fun m -> m.Name)
 
                     (TableNameNotFoundException(tbName, allTableNames) :> System.Exception)
+                    |> Result.Error
+
+            | TableNameExprCase(tbName, _) ->
+                let findedTable =
+                    x.Value.Tables
+                    |> Seq.tryFind(fun m -> 
+                        tbName.Predicate(m.Name)
+                        //StringIC m.Name = StringIC tbName
+                    )
+
+                match findedTable with 
+                | Some table -> table.Range |> Result.Ok
+                | None ->   
+                    let allTableNames =
+                        x.Value.Tables
+                        |> List.ofSeq
+                        |> List.map(fun m -> m.Name)
+
+                    (TableNameNotFoundException(tbName.MethodLiteralText, allTableNames) :> System.Exception)
                     |> Result.Error
 
             | TableLeftTopCase(expr, _) ->

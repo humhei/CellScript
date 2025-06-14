@@ -875,6 +875,33 @@ with
 type Tables = Tables of Table al1List
 with    
     
+    static member OfXlsxFile_ZippedArgs(xlsxFile: XlsxFile, ?sheetAndRangeOptions: list<SheetGettingOptions * RangeGettingOptions>) =
+        use xlsxFile = ExcelPackageWithXlsxFile.Create xlsxFile
+
+        let r = 
+            let sheets =
+                match sheetAndRangeOptions with 
+                | None -> 
+                    xlsxFile.ExcelPackage.GetValidWorksheets()
+                    |> List.map(fun sheet ->
+                        sheet, RangeGettingOptions.UserRange
+                    )
+                | Some sheetAndRangeOptions ->
+                    sheetAndRangeOptions
+                    |> List.map(fun (sheetGettingOptions, rangeGettingOptions) ->
+                        let sheet = xlsxFile.ExcelPackage.GetValidWorksheet(sheetGettingOptions)
+                        sheet, rangeGettingOptions
+                    )
+                    
+            sheets
+            |> List.map(fun (sheet, rangeGettingOptions) ->
+                let datas = sheet.ReadDatas(rangeGettingOptions)
+                StringIC sheet.Name => Table.OfArray2D(datas.Content)
+            )
+
+        r
+        |> dict
+
     static member OfXlsxFile(xlsxFile: XlsxFile, ?rangeGettingOptions, ?sheets) =
         use xlsxFile = ExcelPackageWithXlsxFile.Create xlsxFile
         let rangeGettingOptions = 

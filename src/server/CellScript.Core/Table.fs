@@ -271,13 +271,90 @@ module __ITableColumnKeyExtensions =
                 frame.GroupRowsBy(columnKey)
 
 
-type private HeadOrEnd =
+type internal HeadOrEnd =
     | Head = 0
     | End = 1
 
 type internal XLColumn =
     { Header: IConvertible 
       Contents: IConvertible list }
+
+
+[<RequireQualifiedAccess>]
+module Headers =
+    let internal moveColumnsTo_F (headOrEnd: HeadOrEnd) (columnKeys: StringIC list) (getHeader: 'T -> StringIC) (headers: 'T list) fAlreadyDone fResult  =
+        let originHeaders = 
+            headers
+            |> List.map(fun header ->
+                {|
+                    Header = header
+                    HeaderStringIC = getHeader header   
+                |}
+            )
+
+        let alreadyDone = 
+            let originHeaders =
+                originHeaders
+                |> List.map(fun m -> m.HeaderStringIC)
+
+            (
+                match originHeaders.Length > columnKeys.Length with 
+                | true ->
+                    match headOrEnd with 
+                    | HeadOrEnd.Head -> List.take columnKeys.Length originHeaders = columnKeys
+                    | HeadOrEnd.End -> 
+                        List.skip (originHeaders.Length - columnKeys.Length) originHeaders = columnKeys
+                | false -> false
+            )
+            || (
+                let intersected = Set.intersect (Set.ofList originHeaders) (Set.ofList columnKeys)
+                intersected.Count = 0
+            )
+
+        match alreadyDone with 
+        | true -> 
+            originHeaders
+            |> List.map(fun m -> m.Header)
+            |> fAlreadyDone
+
+        | false ->
+            let sortedHeaders =
+                originHeaders
+                |> List.mapi(fun originIndex originHeader ->
+                    let index = 
+                        columnKeys
+                        |> List.tryFindIndex(fun m -> m = originHeader.HeaderStringIC)
+
+                    let index = 
+                        match index with 
+                        | Some index -> 
+                            let sortingIndex = 
+                                match headOrEnd with 
+                                | HeadOrEnd.Head -> -1
+                                | HeadOrEnd.End -> 1
+
+                            sortingIndex, index
+                        | None -> 0, originIndex
+
+                    originHeader, index
+                )
+
+            fResult sortedHeaders
+
+    let internal moveColumnsTo (headOrEnd: HeadOrEnd) (columnKeys: StringIC list) (getHeader: 'T -> StringIC) (headers: 'T list) =
+        moveColumnsTo_F headOrEnd columnKeys getHeader headers (id) (fun sortedHeaders ->
+            sortedHeaders
+            |> List.sortBy snd
+            |> List.map fst
+            |> List.map(fun m -> m.Header)
+        )
+
+    let moveColumnsToHead sorter getHeader headers =
+        moveColumnsTo HeadOrEnd.Head sorter getHeader headers 
+
+    let moveColumnsToEnd sorter getHeader headers =
+        moveColumnsTo HeadOrEnd.End sorter getHeader headers 
+
 
 type Table = private Table of ExcelFrame<StringIC>
 with 
@@ -316,44 +393,10 @@ with
             x.Headers
             |> List.ofSeq
 
-        let alreadyDone = 
-            (
-                match originHeaders.Length > columnKeys.Length with 
-                | true ->
-                    match headOrEnd with 
-                    | HeadOrEnd.Head -> List.take columnKeys.Length originHeaders = columnKeys
-                    | HeadOrEnd.End -> 
-                        List.skip (originHeaders.Length - columnKeys.Length) originHeaders = columnKeys
-                | false -> false
-            )
-            || (
-                let intersected = Set.intersect (Set.ofList originHeaders) (Set.ofList columnKeys)
-                intersected.Count = 0
-            )
-
-        match alreadyDone with 
-        | true -> x
-        | false ->
+        Headers.moveColumnsTo_F headOrEnd columnKeys (id) originHeaders (fun _ -> x) (fun sortedHeaders ->
             let originHeaders =
-                originHeaders
-                |> List.mapi(fun originIndex originHeader ->
-                    let index = 
-                        columnKeys
-                        |> List.tryFindIndex(fun m -> m = originHeader)
-
-                    let index = 
-                        match index with 
-                        | Some index -> 
-                            let sortingIndex = 
-                                match headOrEnd with 
-                                | HeadOrEnd.Head -> -1
-                                | HeadOrEnd.End -> 1
-
-                            sortingIndex, index
-                        | None -> 0, originIndex
-
-                    originHeader, index
-                )
+                sortedHeaders
+                |> List.mapFst (fun m -> m.Header)
                 |> dict
 
             x.MapFrame(fun frame ->
@@ -362,6 +405,9 @@ with
                 |> Frame.sortColsByKey
                 |> Frame.mapColKeys snd
             )
+
+        )
+
 
         //match columnKeys.Length <= originHeaders.Length with 
         //| true -> 

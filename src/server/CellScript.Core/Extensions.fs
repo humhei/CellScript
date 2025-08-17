@@ -89,8 +89,10 @@ module private _Utils =
 
             | "#,##0" ->
                 fixRawContent_MapText content.Value (fun text ->
-                    text.Replace(",", "")
-                    |> System.Double.Parse
+                    let text2 = text.Replace(",", "")
+                    match Double.tryParse text2 with 
+                    | Some v -> v :> IConvertible
+                    | None -> text :> IConvertible
                 )
 
 

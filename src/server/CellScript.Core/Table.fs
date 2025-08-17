@@ -813,6 +813,9 @@ with
         |> Frame.mapColKeys StringIC
         |> Table.OfFrame
 
+    [<System.ObsoleteAttribute("Unsafe method")>]
+    static member OfFrame_UnSafe(frame: Frame<int, StringIC>) =
+        Table.OfFrame(frame)
 
     static member OfRecords (records: seq<'record>) =
         (Frame.ofRecords records)

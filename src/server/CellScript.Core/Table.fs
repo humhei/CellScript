@@ -575,6 +575,35 @@ with
         |> Array2D.toLists
     
 
+    member table.ChangeTableHeaders_Force(newHeaders: StringIC list) =
+        let __checkHeadersValid =
+            newHeaders
+            |> Set.create true 
+
+        table.MapFrame(fun frame ->
+            let originHeaders = frame.ColumnKeys |> List.ofSeq
+
+            let rowCount = frame.RowCount
+            let columns = 
+                newHeaders
+                |> List.map(fun newHeader ->
+                    let originHeader = List.tryFind (fun originHeader -> originHeader = newHeader) originHeaders
+                    match originHeader with 
+                    | Some originHeader  ->
+                        let col = frame.GetColumn(originHeader)
+                        originHeader, col.IndexOrdinally()
+
+                    | None -> 
+                        let colValues = 
+                            (box "")
+                            |> List.replicate rowCount
+                            |> List.indexed
+
+                        newHeader, series colValues
+                )
+            Frame.ofColumns columns
+        )
+
     /// without header
     member x.ToExcelArray(?withHeader) =
         
@@ -741,6 +770,13 @@ with
 
 
     member x.GetColumns (indexes: seq<StringIC>)  =
+        let indexes = List.ofSeq indexes
+        let headers = List.ofSeq x.Headers
+
+        for index in indexes do
+            match List.contains index headers with 
+            | true -> ()
+            | false -> failwithf "columnKey %s is not included in headers %A" index.Text headers
 
         let mapping =
             Frame.filterCols (fun key _ ->

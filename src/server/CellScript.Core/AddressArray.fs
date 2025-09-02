@@ -161,7 +161,9 @@ with
         | _ ->
             { Address = ComparableExcelCellAddress.OfAddress address 
               Array = content
-              SpecificName = Some (content.[0,0].Text.ForceEndingWith("表"))
+              SpecificName = 
+                Some (content.[0,0].Text.ForceEndingWith("表"))
+                //None
               AddressKind = AddressKind.Exactly
              }
        

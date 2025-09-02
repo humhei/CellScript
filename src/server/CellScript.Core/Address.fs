@@ -135,6 +135,44 @@ with
             &&
                 y.Row.IsBetween(x.StartRow, x.EndRow)
                 
+    member x.IntersectTo(y: ComparableExcelAddress) =
+        let rowsIntersect =
+            let x = 
+                [x.StartRow..x.EndRow]
+                |> Set.ofList
+
+            let y = 
+                [y.StartRow..y.EndRow] 
+                |> Set.ofList
+
+            Set.intersect x y 
+
+        match rowsIntersect.IsEmpty with 
+        | true -> None
+        | false ->
+            let columnIntersect =
+                let x = 
+                    [x.StartColumn..x.EndColumn]
+                    |> Set.ofList
+
+                let y = 
+                    [y.StartColumn..y.EndColumn] 
+                    |> Set.ofList
+
+                Set.intersect x y 
+
+            match columnIntersect.IsEmpty with 
+            | true -> None
+            | false ->
+                {
+                    ComparableExcelAddress.StartRow = rowsIntersect.MinimumElement
+                    EndRow = rowsIntersect.MaximumElement
+                    StartColumn = columnIntersect.MinimumElement
+                    EndColumn = columnIntersect.MaximumElement
+                }
+                |> Some
+
+
 
     member x.IsIncludedIn(y: ComparableExcelAddress) = y.Contains(x)
 

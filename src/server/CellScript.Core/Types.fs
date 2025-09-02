@@ -243,6 +243,7 @@ module Types =
     type ColumnPastingOptions =
         | Directly = 0
         | ByColumnName = 1
+        | ByColumnName_ClearOtherColumnContents = 2
 
     type VisibleExcelWorksheet = private VisibleExcelWorksheet of ExcelWorksheet
     with 
@@ -435,7 +436,7 @@ module Types =
             let headers, datas = fixHeaders datas
 
             let headers = headers |> List.map (fun header ->
-                (ConvertibleUnion.Convert header).Text
+                (ConvertibleUnion.Convert header).Text.Trim()
                 |> StringIC
             )
 
@@ -529,6 +530,7 @@ module Types =
 
                         findedTable
 
+                    | ColumnPastingOptions.ByColumnName_ClearOtherColumnContents 
                     | ColumnPastingOptions.ByColumnName ->
                         let __checkTableValid =
                             let addr = findedTable.Address
@@ -546,26 +548,28 @@ module Types =
                         //let originWidth  = worksheet.Cells.["A1"].EntireColumn.Width
                  
                         let columns = 
-                            let headers = 
-                                let range = 
-                                    let columnCount = findedTable.Columns.Count
-                                    findedTable.Range.Offset(0, 0, 1, columnCount)
+                            findedTable.Columns
+                            |> List.ofSeq
+                            //let headers = 
+                            //    let range = 
+                            //        let columnCount = findedTable.Columns.Count
+                            //        findedTable.Range.Offset(0, 0, 1, columnCount)
                             
-                                range
-                                |> List.ofSeq
-                                |> List.map(fun m -> m.Text)
+                            //    range
+                            //    |> List.ofSeq
+                            //    |> List.map(fun m -> m.Text)
 
-                            let columns = 
-                                findedTable.Columns
-                                |> List.ofSeq
+                            //let columns = 
+                            //    findedTable.Columns
+                            //    |> List.ofSeq
 
-                            (headers, columns)
-                            ||> List.map2(fun header column ->
-                                {|
-                                    Name = header
-                                    Column = column
-                                |}
-                            )
+                            //(headers, columns)
+                            //||> List.map2(fun header column ->
+                            //    {|
+                            //        Name = header
+                            //        Column = column
+                            //    |}
+                            //)
 
                         let headers = 
                             match columns with 
@@ -573,18 +577,42 @@ module Types =
                             | _ -> headers
 
                         let columnNames =
+                            
                             columns
-                            |> List.map(fun m -> StringIC m.Name)
+                            |> List.map(fun column -> 
+                                let columnName = 
+                                    let name = column.Name
+                                    let trimmedName = name.Trim()
+                                    match name.Length = trimmedName.Length with 
+                                    | true -> name
+                                    | false -> 
+                                        column.Name <- trimmedName
+                                        trimmedName
+                                StringIC columnName
+                            )
 
                         columns
                         |> List.iteri(fun columnID column ->
                             let columnName = column.Name
+
                             let finedHeader =
                                 headers
                                 |> List.tryFindIndex(fun header -> header = StringIC columnName)
 
                             match finedHeader with 
-                            | None -> ()
+                            | None -> 
+                                match columnPastingOptions with 
+                                | ColumnPastingOptions.ByColumnName_ClearOtherColumnContents ->
+                                    let column = column
+                                    let addr = 
+                                        { StartRow = addr.StartRow+1
+                                          EndRow = addr.EndRow
+                                          StartColumn = column.Id + 1 
+                                          EndColumn = column.Id + 1 }
+                                    let range = worksheet.Cells.[addr.Address]
+                                    range.Value <- ""
+                                    ()
+                                | _ -> ()
                             | Some finedHeader ->
                                 let datas = datas.[1.., finedHeader]
                                 let addr2 = addr.Offset(1, columnID, datas.Length-1, 0)
@@ -677,7 +705,8 @@ module Types =
                         )
                     )
 
-                | ColumnPastingOptions.ByColumnName -> ()
+                | ColumnPastingOptions.ByColumnName
+                | ColumnPastingOptions.ByColumnName_ClearOtherColumnContents -> ()
 
 
             tab.TableStyle <- 

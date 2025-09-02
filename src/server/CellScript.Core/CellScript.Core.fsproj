@@ -35,7 +35,7 @@
     <PackageReference Include="EPPlus" Version="7.6.0" />
     <PackageReference Include="FParsec" Version="1.1.1" />
     <PackageReference Include="Shrimp.Akkling.Cluster.Intergraction" Version="0.2.125" />
-    <PackageReference Include="Shrimp.FSharp.Plus" Version="5.99.770" />
+    <PackageReference Include="Shrimp.FSharp.Plus" Version="5.99.793" />
     <PackageReference Include="System.Memory" Version="4.5.5" />
     <PackageReference Include="System.ValueTuple" Version="4.5.0" />
 
